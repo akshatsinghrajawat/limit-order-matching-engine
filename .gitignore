@@ -1,0 +1,20 @@
+# build output
+build/
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+compile_commands.json
+
+# editor/OS cruft
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# sanitizer / fuzz artifacts
+*.log
+crash-*
+*.core
+
+# generated benchmark charts (regenerate from bench/results, don't commit binaries)
+bench/results/*.svg
