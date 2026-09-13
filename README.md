@@ -8,15 +8,18 @@ Benchmarks staged and versioned per milestone.
 
 ## Status
 
-**M0 — spec and architecture finalized** (`docs/spec.md`, ADR-001–006).
-Implementation starting.
+**M1 in progress.** `Order`, the generation-counter `Handle`, `FixedPool<T>`,
+and the intrusive per-level FIFO list (`level_append`/`level_unlink`) are
+implemented per ADR-001/002/004 and pass an ASan/UBSan-clean manual check
+covering stale-handle rejection, pool exhaustion, and same-level relink.
+No book, no matcher, no formal test suite yet — those are next.
 
 ## Roadmap
 
 ```
-M0  spec + architecture (this commit)         — done
-M1  core: pools, handles, intrusive levels,
-    naive matcher, conformance tests 1-12      — in progress
+M0  spec + architecture                       — done
+M1  Order/Handle/FixedPool/level list         — in progress
+    naive matcher, conformance tests 1-12      — not started
 M2  reference oracle + differential fuzz
     (1M ops, 100+ seeds) + exhaustive test
 M3  validated benchmark harness + W1 baseline
