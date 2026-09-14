@@ -101,6 +101,12 @@ class FixedPool {
   T& unchecked(Index idx) { return slots_[idx].value; }
   const T& unchecked(Index idx) const { return slots_[idx].value; }
 
+  // Reconstructs the Handle for a raw index the caller already knows is
+  // currently occupied (e.g. from walking an intrusive list, which only
+  // tracks Index per ADR-004). free()/get() need a generation-checked
+  // Handle, not a bare index -- this is the bridge between the two.
+  Handle handle_of(Index idx) const { return make_handle(idx, generation_[idx]); }
+
   Index capacity() const { return static_cast<Index>(slots_.size()); }
 
  private:

@@ -8,18 +8,24 @@ Benchmarks staged and versioned per milestone.
 
 ## Status
 
-**M1 in progress.** `Order`, the generation-counter `Handle`, `FixedPool<T>`,
-and the intrusive per-level FIFO list (`level_append`/`level_unlink`) are
-implemented per ADR-001/002/004 and pass an ASan/UBSan-clean manual check
-covering stale-handle rejection, pool exhaustion, and same-level relink.
-No book, no matcher, no formal test suite yet — those are next.
+**M1 in progress.** `Order`/`Handle`/`FixedPool`/intrusive level list, plus
+a naive `Book` matcher on top of ADR-003's `std::map` baseline, are
+implemented and passing conformance tests 1–8 (rest, best bid/ask,
+crossing-at-maker's-price, multi-level sweep, partial-fill priority, FIFO,
+cancel, cancel-of-cancelled) under `-fsanitize=address,undefined` via
+`ctest`. **Not implemented yet**: modify (S2, tests 9–12), self-trade
+prevention (S3, test 17), market/IOC/FOK (S5). No oracle, no fuzzing, no
+journal yet — this is a hand-checked correctness pass, not the formal
+M2 verification.
 
 ## Roadmap
 
 ```
 M0  spec + architecture                       — done
-M1  Order/Handle/FixedPool/level list         — in progress
-    naive matcher, conformance tests 1-12      — not started
+M1  Order/Handle/FixedPool/level list          — done
+    naive matcher, conformance tests 1-8       — done
+    modify (S2), STP (S3), tests 9-12, 17      — not started
+    market/IOC/FOK (S5)                        — not started
 M2  reference oracle + differential fuzz
     (1M ops, 100+ seeds) + exhaustive test
 M3  validated benchmark harness + W1 baseline

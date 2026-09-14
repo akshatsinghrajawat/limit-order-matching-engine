@@ -18,17 +18,15 @@ endif()
 
 add_compile_options(-Wall -Wextra -Wpedantic)
 
-# The engine library target is added here once include/engine and src/
-# actually contain sources (M1). Intentionally not stubbed out with a
-# placeholder .cpp — an empty library target that "builds" proves nothing
-# and would need to be deleted the moment real code lands.
-#
-# add_library(engine ...)
-# target_include_directories(engine PUBLIC include)
+# The engine is header-only so far (M1) — an interface target keeps
+# include paths and sanitizer flags consistent for anything that uses it,
+# without pretending there's a compiled library yet.
+add_library(engine INTERFACE)
+target_include_directories(engine INTERFACE include)
 
 if(BUILD_TESTS)
   enable_testing()
-  # add_subdirectory(tests) — wired up once tests/conformance has content
-  # and the oracle exists (M1-M2), matching the milestone exit criteria in
-  # README.md rather than the reverse.
+  add_executable(test_basic tests/conformance/test_basic.cpp)
+  target_link_libraries(test_basic PRIVATE engine)
+  add_test(NAME conformance_basic COMMAND test_basic)
 endif()
