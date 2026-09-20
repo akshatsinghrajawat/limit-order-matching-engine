@@ -1,21 +1,27 @@
 name: CI
-on: [push, pull_request]
+
+# S7 is a hard, test-enforced invariant (docs/spec.md): every test build
+# must run under ASan+UBSan. CMakeLists.txt already defaults
+# ENABLE_SANITIZERS to ON, so this workflow doesn't pass any special flags
+# -- it just builds and runs the suite the same way a contributor would
+# locally on Linux, and fails the build on any assertion/sanitizer trip.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
 jobs:
-  build-and-test:
+  conformance:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build with sanitizers
-        run: g++ -std=c++17 -Wall -Wextra -Wpedantic -fsanitize=address,undefined tests.cpp -o tests
-      - name: Run tests
-        run: ./tests
-      - name: Build main program
-        run: g++ -std=c++17 -Wall -Wextra -Wpedantic number_guessing_game.cpp -o guess
-      - name: Build Knuth optimal BST demo
-        run: g++ -std=c++17 -Wall -Wextra -Wpedantic knuth_optimal_bst.cpp -o knuth_bst
-      - name: Run Knuth optimal BST demo
-        run: ./knuth_bst
-      - name: Build noisy oracle search demo
-        run: g++ -std=c++17 -Wall -Wextra -Wpedantic noisy_oracle_search.cpp -o noisy_search
-      - name: Run noisy oracle search demo
-        run: ./noisy_search
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Run conformance suite (ASan/UBSan)
+        run: ctest --test-dir build --output-on-failure
