@@ -1,0 +1,21 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build with sanitizers
+        run: g++ -std=c++17 -Wall -Wextra -Wpedantic -fsanitize=address,undefined tests.cpp -o tests
+      - name: Run tests
+        run: ./tests
+      - name: Build main program
+        run: g++ -std=c++17 -Wall -Wextra -Wpedantic number_guessing_game.cpp -o guess
+      - name: Build Knuth optimal BST demo
+        run: g++ -std=c++17 -Wall -Wextra -Wpedantic knuth_optimal_bst.cpp -o knuth_bst
+      - name: Run Knuth optimal BST demo
+        run: ./knuth_bst
+      - name: Build noisy oracle search demo
+        run: g++ -std=c++17 -Wall -Wextra -Wpedantic noisy_oracle_search.cpp -o noisy_search
+      - name: Run noisy oracle search demo
+        run: ./noisy_search
