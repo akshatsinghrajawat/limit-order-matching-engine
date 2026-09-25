@@ -16,6 +16,13 @@ inline constexpr Index kNilIndex = std::numeric_limits<Index>::max();
 
 enum class Side : std::uint8_t { Buy, Sell };
 
+// S5. GTC (default) rests any residual. IOC and FOK never rest -- an
+// unfilled remainder is cancelled, not left in the book. FOK additionally
+// pre-checks available qty and rejects the whole order, untouched, if it
+// can't be fully filled -- IOC takes whatever's marketable and cancels
+// the rest.
+enum class TimeInForce : std::uint8_t { GTC, IOC, FOK };
+
 // Hot/cold split per ADR-002. `timestamp` is deliberately absent: S7
 // forbids wall-clock state anywhere in the core, so it cannot live here
 // regardless of access frequency — ADR-002 listed it as a cold field

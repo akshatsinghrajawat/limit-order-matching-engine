@@ -26,9 +26,10 @@ struct Trade {
 // array/page-table replacement), and the order_id -> handle map used for
 // cancel (ADR-005).
 //
-// Scope: limit orders only -- insert, cross, partial fill, cancel, modify
-// (S2), self-trade prevention (S3). Not implemented yet: market/IOC/FOK
-// (S5).
+// Scope: limit orders (GTC/IOC/FOK) and market orders -- insert, cross,
+// partial fill, cancel, modify (S2), self-trade prevention (S3), S5's
+// time-in-force variants. Not implemented yet: the oracle/differential
+// fuzzer (M2), journal/replay (M3+).
 class Book {
  public:
   explicit Book(Index capacity) : pool_(capacity) {}
@@ -47,10 +48,38 @@ class Book {
     bool stp_rejected = false;  // true if a self-match stopped crossing early
   };
 
+  // S5. tif defaults to GTC (rests any residual). IOC/FOK never rest --
+  // see TimeInForce's doc comment in types.hpp.
+  //
+  // FOK's pre-check and the crossing that follows must agree on where
+  // crossing would stop, or the "atomic" guarantee is a lie -- a pre-check
+  // that only summed qty-at-price would say yes, then cross() would say
+  // stp_rejected on hitting a self-match order, and the order rests 0 but
+  // already-executed trades happened anyway (not atomic). So
+  // available_before_self_trade() below walks the book the *same way*
+  // cross() does -- same price bound, same per-order self-match stop --
+  // and both S8 (nothing can insert between pre-check and fill, this
+  // engine is single-threaded and a command runs to completion) and this
+  // shared-walk agreement are what make the atomicity claim actually true,
+  // not just asserted (test 14b exercises the disagreement this would
+  // cause if the pre-check ignored STP).
   AddResult add_limit_order(OrderId order_id, Side side, Price price, Qty qty,
-                             std::uint32_t account) {
+                             std::uint32_t account,
+                             TimeInForce tif = TimeInForce::GTC) {
     AddResult result;
     if (qty == 0 || id_map_.count(order_id) != 0) return result;
+
+    if (tif == TimeInForce::FOK) {
+      Qty available = (side == Side::Buy)
+          ? available_before_self_trade(asks_, price, account,
+                [](Price resting, Price taker) { return resting <= taker; })
+          : available_before_self_trade(bids_, price, account,
+                [](Price resting, Price taker) { return resting >= taker; });
+      if (available < qty) {
+        result.accepted = true;  // valid, well-formed order -- rejected on
+        return result;           // liquidity grounds, book untouched (S5)
+      }
+    }
 
     Order incoming{};
     incoming.order_id = order_id;
@@ -68,9 +97,42 @@ class Book {
     }
 
     result.accepted = true;
-    result.resting_qty = result.stp_rejected ? 0 : incoming.qty;
-    // S5: only rests if residual > 0 and STP didn't cut it off
-    if (!result.stp_rejected && incoming.qty > 0) rest(side, price, incoming);
+    bool may_rest = (tif == TimeInForce::GTC) && !result.stp_rejected;
+    result.resting_qty = may_rest ? incoming.qty : 0;
+    // S5: GTC only rests if residual > 0 and STP didn't cut it off; IOC/FOK
+    // never reach here with residual > 0 while may_rest is false and still
+    // "accepted" -- the remainder is simply not rested, i.e. cancelled.
+    if (may_rest && incoming.qty > 0) rest(side, price, incoming);
+    return result;
+  }
+
+  // S5. No price bound -- crosses() is unconditionally true, so the sweep
+  // runs until incoming.qty is exhausted or the opposite side empties out.
+  // Never rests (there's no price to rest *at*); an unfilled remainder is
+  // simply not rested, same as IOC. STP still applies -- a self-match still
+  // stops the sweep and whatever's left goes unfilled rather than crossing
+  // through it (S3 makes no TIF exception).
+  AddResult add_market_order(OrderId order_id, Side side, Qty qty,
+                              std::uint32_t account) {
+    AddResult result;
+    if (qty == 0 || id_map_.count(order_id) != 0) return result;
+
+    Order incoming{};
+    incoming.order_id = order_id;
+    incoming.side = side;
+    incoming.qty = qty;
+    incoming.account = account;
+
+    if (side == Side::Buy) {
+      result.stp_rejected = cross(asks_, incoming, result.trades,
+            [](Price, Price) { return true; });
+    } else {
+      result.stp_rejected = cross(bids_, incoming, result.trades,
+            [](Price, Price) { return true; });
+    }
+
+    result.accepted = true;
+    result.resting_qty = 0;  // market orders never rest -- S5
     return result;
   }
 
@@ -194,6 +256,31 @@ class Book {
       if (level.head == kNilIndex) resting_side.erase(level_it);
     }
     return false;
+  }
+
+  // FOK pre-check. Walks the same levels, in the same order, under the
+  // same price bound as cross() would -- summing qty until either the
+  // book/price-bound runs out (return what was found) or an order whose
+  // account matches `account` is reached (stop and return the running
+  // total *without* counting that order, mirroring cross()'s "self-match
+  // stops the sweep, that order is never touched" rule). Read-only: no
+  // trades, no mutation, nothing to unwind if the caller decides to
+  // reject.
+  template <typename PriceMap, typename Crosses>
+  Qty available_before_self_trade(const PriceMap& resting_side, Price limit_price,
+                                   std::uint32_t account, Crosses crosses) const {
+    Qty total = 0;
+    for (const auto& [level_price, level] : resting_side) {
+      if (!crosses(level_price, limit_price)) break;
+      Index idx = level.head;
+      while (idx != kNilIndex) {
+        const Order& order = pool_.unchecked(idx);
+        if (order.account == account) return total;  // S3 boundary
+        total += order.qty;
+        idx = order.next_idx;
+      }
+    }
+    return total;
   }
 
   void rest(Side side, Price price, Order& incoming) {

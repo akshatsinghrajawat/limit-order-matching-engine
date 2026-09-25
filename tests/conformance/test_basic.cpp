@@ -1,9 +1,8 @@
-// Conformance tests 1-12 plus 8b/8c/12b/17 (docs/spec.md test list). Plain
+// Conformance tests 1-17 plus 8b/8c/12b/14b (docs/spec.md test list). Plain
 // asserts, no framework -- consistent with the project's hand-rolled-tools
 // approach and the fact there's no oracle yet to diff against (that's M2).
-// This file grows into the real conformance/ suite once tests 13-16/18/19
-// have something to test against (market/IOC/FOK, invalid input, order-id
-// wraparound all land after STP).
+// This file grows into the real conformance/ suite once tests 18-19 have
+// something to test against (invalid input, order-id wraparound).
 //
 // Account convention (S3): every Buy order in this file uses account
 // kBuyAcct and every Sell order uses kSellAcct, so ordinary crossing tests
@@ -190,6 +189,77 @@ static void test12b_modify_relink_within_same_level_preserves_fifo() {
   assert(r.trades[2].qty == 6);
 }
 
+static void test13_market_order_sweeps_and_cancels_remainder() {
+  Book book(16);
+  book.add_limit_order(1, Side::Sell, 100, 5, kSellAcct);
+  book.add_limit_order(2, Side::Sell, 101, 5, kSellAcct);
+  auto r = book.add_market_order(3, Side::Buy, 12, kBuyAcct);  // asks for
+      // more than either level, or both combined, can supply
+  assert(r.accepted);
+  assert(r.trades.size() == 2);
+  assert(r.trades[0].price == 100);  // best price first -- no price bound
+  assert(r.trades[1].price == 101);  // doesn't change that priority still
+  assert(r.trades[0].qty == 5 && r.trades[1].qty == 5);
+  assert(r.resting_qty == 0);        // unfilled 2 is cancelled, not rested
+  assert(!book.has_ask());           // book swept clean, no residual level
+}
+
+static void test14_ioc_partial_fill_cancels_remainder() {
+  Book book(16);
+  book.add_limit_order(1, Side::Sell, 100, 5, kSellAcct);
+  auto r = book.add_limit_order(2, Side::Buy, 100, 10, kBuyAcct,
+                                 TimeInForce::IOC);
+  assert(r.trades.size() == 1 && r.trades[0].qty == 5);
+  assert(r.resting_qty == 0);   // remaining 5 cancelled -- IOC never rests
+  assert(!book.has_bid());      // and never touches the bid side at all
+}
+
+static void test14b_fok_pre_check_respects_self_trade_boundary() {
+  Book book(16);
+  static constexpr std::uint32_t kSelfAcct = 77;
+  book.add_limit_order(1, Side::Sell, 100, 5, kSellAcct);   // available
+  book.add_limit_order(2, Side::Sell, 100, 5, kSelfAcct);   // blocks the walk
+  book.add_limit_order(3, Side::Sell, 100, 5, kSellAcct);   // unreachable --
+      // a naive "sum qty at price" pre-check would see 15 and pass a
+      // 10-lot FOK; the real available qty stops at order 2, so it's 5.
+  auto r = book.add_limit_order(4, Side::Buy, 100, 10, kSelfAcct,
+                                 TimeInForce::FOK);
+  assert(r.accepted);
+  assert(r.trades.empty());     // rejected before touching the book
+  assert(book.has_ask());
+  assert(book.best_ask() == 100);
+  // all three resting orders completely untouched by the rejected attempt
+  assert(book.order_at(book.head_at(Side::Sell, 100)).order_id == 1);
+  assert(book.order_at(book.head_at(Side::Sell, 100)).qty == 5);
+}
+
+static void test15_fok_success_fills_atomically() {
+  Book book(16);
+  book.add_limit_order(1, Side::Sell, 100, 5, kSellAcct);
+  book.add_limit_order(2, Side::Sell, 101, 5, kSellAcct);
+  auto r = book.add_limit_order(3, Side::Buy, 101, 10, kBuyAcct,
+                                 TimeInForce::FOK);
+  assert(r.accepted);
+  assert(r.trades.size() == 2);
+  assert(r.trades[0].maker_order_id == 1);  // price-time priority, as usual
+  assert(r.trades[1].maker_order_id == 2);
+  assert(r.resting_qty == 0);
+  assert(!book.has_ask());
+}
+
+static void test16_fok_failure_leaves_book_untouched() {
+  Book book(16);
+  book.add_limit_order(1, Side::Sell, 100, 5, kSellAcct);
+  auto r = book.add_limit_order(2, Side::Buy, 100, 10, kBuyAcct,
+                                 TimeInForce::FOK);  // only 5 available
+  assert(r.accepted);
+  assert(r.trades.empty());  // all-or-nothing: nothing, since not all
+  assert(r.resting_qty == 0);
+  assert(book.has_ask());
+  assert(book.best_ask() == 100);
+  assert(book.order_at(book.head_at(Side::Sell, 100)).qty == 5);  // untouched
+}
+
 static void test17_self_trade_prevention() {
   Book book(16);
   static constexpr std::uint32_t kSelfAcct = 99;  // deliberately shared
@@ -232,7 +302,12 @@ int main() {
   test11_modify_price_change_moves_level();
   test12_modify_price_change_joins_existing_level_at_tail();
   test12b_modify_relink_within_same_level_preserves_fifo();
+  test13_market_order_sweeps_and_cancels_remainder();
+  test14_ioc_partial_fill_cancels_remainder();
+  test14b_fok_pre_check_respects_self_trade_boundary();
+  test15_fok_success_fills_atomically();
+  test16_fok_failure_leaves_book_untouched();
   test17_self_trade_prevention();
-  std::printf("conformance tests 1-12 (+8b, 8c, 12b, 17): all passed\n");
+  std::printf("conformance tests 1-17 (+8b, 8c, 12b, 14b): all passed\n");
   return 0;
 }
