@@ -18,3 +18,5 @@ crash-*
 
 # generated benchmark charts (regenerate from bench/results, don't commit binaries)
 bench/results/*.svg
+test_basic.exe
+build/
