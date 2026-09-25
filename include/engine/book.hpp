@@ -42,10 +42,15 @@ class Book {
   // simplest deterministic policy: no relinking of the resting side is
   // needed to prove correct, because the resting side is never touched.
   struct AddResult {
-    bool accepted = false;  // false only means "duplicate order_id" today
+    bool accepted = false;  // false only means "duplicate order_id" or "qty == 0" today
     std::vector<Trade> trades;
-    Qty resting_qty = 0;  // 0 if fully filled, STP-rejected, or non-marketable-and-rested-elsewhere
+    Qty resting_qty = 0;  // 0 if fully filled, STP-rejected, pool-exhausted, or non-marketable-and-rested-elsewhere
     bool stp_rejected = false;  // true if a self-match stopped crossing early
+    bool pool_exhausted = false;  // true if a residual couldn't be rested --
+        // ADR-001/pool.hpp's "clean rejection, not a condition to retry"
+        // contract; see test 19. Any crossing already executed before this
+        // point stands (S8: a command that's run can't be unwound) -- this
+        // only means the leftover residual is dropped instead of resting.
   };
 
   // S5. tif defaults to GTC (rests any residual). IOC/FOK never rest --
@@ -98,11 +103,13 @@ class Book {
 
     result.accepted = true;
     bool may_rest = (tif == TimeInForce::GTC) && !result.stp_rejected;
-    result.resting_qty = may_rest ? incoming.qty : 0;
-    // S5: GTC only rests if residual > 0 and STP didn't cut it off; IOC/FOK
-    // never reach here with residual > 0 while may_rest is false and still
-    // "accepted" -- the remainder is simply not rested, i.e. cancelled.
-    if (may_rest && incoming.qty > 0) rest(side, price, incoming);
+    if (may_rest && incoming.qty > 0) {
+      if (rest(side, price, incoming)) {
+        result.resting_qty = incoming.qty;
+      } else {
+        result.pool_exhausted = true;  // resting_qty stays 0 -- dropped,
+      }                                 // not corrupted into the book
+    }
     return result;
   }
 
@@ -283,12 +290,27 @@ class Book {
     return total;
   }
 
-  void rest(Side side, Price price, Order& incoming) {
+  // Returns false if the pool is exhausted -- ADR-001/pool.hpp's "clean
+  // rejection, not a condition to retry" contract, finally wired up here.
+  // Before this fix, an invalid Handle's index() (kNilIndex, i.e.
+  // 0xFFFFFFFF) flowed straight into level_append()'s pool_.unchecked()
+  // unchecked -- an out-of-bounds write past the pool's backing vector.
+  // seq_no is only burned on success: an order that never entered the
+  // book shouldn't consume a sequence number. level_for_insert() may have
+  // just created a fresh empty Level for a price with no prior resting
+  // orders -- clean that up on the failure path so a full pool doesn't
+  // also leak empty levels into the price-level maps.
+  bool rest(Side side, Price price, Order& incoming) {
     Level& level = level_for_insert(side, price);
-    incoming.seq_no = next_seq_++;  // S6: assigned by the core, on accept
     Handle h = pool_.allocate(incoming);
+    if (!h.valid()) {
+      if (level.head == kNilIndex) erase_level(side, price);
+      return false;
+    }
+    pool_.get(h)->seq_no = next_seq_++;  // S6: assigned by the core, on accept
     level_append(level, pool_, h.index());
     id_map_[incoming.order_id] = h;
+    return true;
   }
 
   Level& level_for_insert(Side side, Price price) {

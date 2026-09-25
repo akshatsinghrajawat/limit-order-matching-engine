@@ -1,8 +1,8 @@
-// Conformance tests 1-17 plus 8b/8c/12b/14b (docs/spec.md test list). Plain
+// Conformance tests 1-19 plus 8b/8c/12b/14b (docs/spec.md test list). Plain
 // asserts, no framework -- consistent with the project's hand-rolled-tools
 // approach and the fact there's no oracle yet to diff against (that's M2).
-// This file grows into the real conformance/ suite once tests 18-19 have
-// something to test against (invalid input, order-id wraparound).
+// This closes out the conformance list from the spec; M2's oracle and
+// differential fuzzer are next.
 //
 // Account convention (S3): every Buy order in this file uses account
 // kBuyAcct and every Sell order uses kSellAcct, so ordinary crossing tests
@@ -286,6 +286,61 @@ static void test17_self_trade_prevention() {
   assert(book.order_at(book.head_at(Side::Sell, 100)).qty == 5);
 }
 
+static void test18_invalid_input_rejected_at_ingress() {
+  Book book(16);
+  auto r_zero_limit = book.add_limit_order(1, Side::Buy, 100, 0, kBuyAcct);
+  assert(!r_zero_limit.accepted);
+  assert(!book.has_bid());
+
+  auto r_zero_market = book.add_market_order(2, Side::Buy, 0, kBuyAcct);
+  assert(!r_zero_market.accepted);
+
+  book.add_limit_order(3, Side::Buy, 100, 5, kBuyAcct);
+  auto r_dup = book.add_limit_order(3, Side::Sell, 100, 5, kSellAcct);
+      // reused order_id -- must be rejected at the id_map_ lookup, before
+      // it ever reaches the pool or has a chance to cross (S1)
+  assert(!r_dup.accepted);
+  assert(r_dup.trades.empty());
+  // order 3 is completely untouched by the rejected duplicate -- still
+  // the original Buy order, not silently overwritten
+  assert(book.order_at(book.head_at(Side::Buy, 100)).side == Side::Buy);
+  assert(book.order_at(book.head_at(Side::Buy, 100)).qty == 5);
+
+  assert(!book.modify_order(3, 100, 0));  // qty=0 modify also rejected
+  assert(book.order_at(book.head_at(Side::Buy, 100)).qty == 5);  // untouched
+}
+
+static void test19_pool_exhaustion_is_clean_rejection() {
+  Book book(2);  // tiny pool -- exactly 2 slots, deliberately tight
+  auto r1 = book.add_limit_order(1, Side::Buy, 100, 5, kBuyAcct);
+  auto r2 = book.add_limit_order(2, Side::Buy, 99, 5, kBuyAcct);
+  assert(r1.accepted && r1.resting_qty == 5 && !r1.pool_exhausted);
+  assert(r2.accepted && r2.resting_qty == 5 && !r2.pool_exhausted);
+
+  // pool is now full (2/2). A third order with nothing to cross against
+  // must be rejected cleanly on the rest() path, not corrupt memory via
+  // an unvalidated Handle -- this is the case pool.hpp documented as
+  // required and nothing previously exercised.
+  auto r3 = book.add_limit_order(3, Side::Buy, 98, 5, kBuyAcct);
+  assert(r3.accepted);           // well-formed order, ingress accepted it
+  assert(r3.trades.empty());     // nothing to cross against
+  assert(r3.pool_exhausted);
+  assert(r3.resting_qty == 0);   // never entered the book
+
+  // the two pre-existing orders are completely unaffected
+  assert(book.best_bid() == 100);
+  assert(book.order_at(book.head_at(Side::Buy, 100)).order_id == 1);
+  assert(book.order_at(book.head_at(Side::Buy, 99)).order_id == 2);
+
+  // order 3's price level (98) must not have been left behind as an
+  // empty dangling level -- freeing a slot must still work normally
+  // afterward, proving the pool and id_map_ are still in a sane state
+  assert(book.cancel_order(1));
+  assert(book.best_bid() == 99);
+  auto r4 = book.add_limit_order(4, Side::Buy, 97, 5, kBuyAcct);
+  assert(r4.accepted && r4.resting_qty == 5 && !r4.pool_exhausted);
+}
+
 int main() {
   test1_single_limit_rests();
   test2_best_bid_ask_tracking();
@@ -308,6 +363,8 @@ int main() {
   test15_fok_success_fills_atomically();
   test16_fok_failure_leaves_book_untouched();
   test17_self_trade_prevention();
-  std::printf("conformance tests 1-17 (+8b, 8c, 12b, 14b): all passed\n");
+  test18_invalid_input_rejected_at_ingress();
+  test19_pool_exhaustion_is_clean_rejection();
+  std::printf("conformance tests 1-19 (+8b, 8c, 12b, 14b): all passed\n");
   return 0;
 }
