@@ -223,9 +223,41 @@ class Book {
     return (side == Side::Buy ? bids_.at(price) : asks_.at(price)).head;
   }
 
+  struct RestingOrder {
+    Side side;
+    Price price;
+    OrderId order_id;
+    Qty qty;
+    std::uint32_t account;
+    SeqNo seq_no;
+  };
+
+  // Every resting order in a fixed order: bids best-first, then asks
+  // best-first, FIFO within a level. Walks the price maps and level lists
+  // only, never id_map_, so the output can't depend on hash iteration
+  // order (S7). Allocates -- for tests and the M2 differential harness,
+  // not for anything on the matching path.
+  std::vector<RestingOrder> snapshot() const {
+    std::vector<RestingOrder> out;
+    append_side(bids_, out);
+    append_side(asks_, out);
+    return out;
+  }
+
  private:
   using BidLevels = std::map<Price, Level, std::greater<Price>>;  // best = begin()
   using AskLevels = std::map<Price, Level, std::less<Price>>;     // best = begin()
+
+  template <typename PriceMap>
+  void append_side(const PriceMap& side, std::vector<RestingOrder>& out) const {
+    for (const auto& [price, level] : side) {
+      for (Index idx = level.head; idx != kNilIndex;) {
+        const Order& o = pool_.unchecked(idx);
+        out.push_back({o.side, o.price, o.order_id, o.qty, o.account, o.seq_no});
+        idx = o.next_idx;
+      }
+    }
+  }
 
   // Returns true iff a self-match stopped the sweep before `incoming` was
   // exhausted -- the caller must not rest the residual in that case (S3).

@@ -341,6 +341,41 @@ static void test19_pool_exhaustion_is_clean_rejection() {
   assert(r4.accepted && r4.resting_qty == 5 && !r4.pool_exhausted);
 }
 
+// Not a numbered spec test: snapshot() is the observation hook M2's
+// differential harness diffs through, so it gets its own check here before
+// anything is built on top of it.
+static void test_snapshot_reports_priority_order() {
+  Book book(16);
+  assert(book.snapshot().empty());
+
+  book.add_limit_order(1, Side::Buy, 100, 5, kBuyAcct);
+  book.add_limit_order(2, Side::Buy, 100, 7, kBuyAcct);
+  book.add_limit_order(3, Side::Buy, 99, 4, kBuyAcct);
+  book.add_limit_order(4, Side::Sell, 103, 6, kSellAcct);
+  book.add_limit_order(5, Side::Sell, 101, 8, kSellAcct);
+
+  auto snap = book.snapshot();
+  assert(snap.size() == 5);
+  assert(snap[0].order_id == 1 && snap[1].order_id == 2 && snap[2].order_id == 3);
+  assert(snap[3].order_id == 5 && snap[4].order_id == 4);
+  assert(snap[0].price == 100 && snap[2].price == 99);
+  assert(snap[3].price == 101 && snap[4].price == 103);
+  assert(snap[1].qty == 7 && snap[1].seq_no == 1 && snap[1].account == kBuyAcct);
+
+  // qty increase sends order 1 to the tail of its level; snapshot must
+  // reflect the new FIFO order and the fresh seq_no, not insertion order
+  assert(book.modify_order(1, 100, 9));
+  snap = book.snapshot();
+  assert(snap[0].order_id == 2 && snap[1].order_id == 1);
+  assert(snap[1].qty == 9 && snap[1].seq_no == 5);
+
+  auto r = book.add_limit_order(6, Side::Buy, 101, 3, kBuyAcct);
+  assert(r.trades.size() == 1);
+  snap = book.snapshot();
+  assert(snap[3].order_id == 5 && snap[3].qty == 5);
+  assert(snap.size() == 5);
+}
+
 int main() {
   test1_single_limit_rests();
   test2_best_bid_ask_tracking();
@@ -365,6 +400,7 @@ int main() {
   test17_self_trade_prevention();
   test18_invalid_input_rejected_at_ingress();
   test19_pool_exhaustion_is_clean_rejection();
+  test_snapshot_reports_priority_order();
   std::printf("conformance tests 1-19 (+8b, 8c, 12b, 14b): all passed\n");
   return 0;
 }
