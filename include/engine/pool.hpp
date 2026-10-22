@@ -109,6 +109,17 @@ class FixedPool {
 
   Index capacity() const { return static_cast<Index>(slots_.size()); }
 
+  // O(capacity), for invariant checks only. Returns capacity + 1 if the
+  // free list cycles, so a corrupted list reads as a violation instead of
+  // hanging the check.
+  Index free_slots() const {
+    Index n = 0;
+    for (Index i = free_head_; i != kNilIndex; i = slots_[i].next_free) {
+      if (++n > slots_.size()) return static_cast<Index>(slots_.size()) + 1;
+    }
+    return n;
+  }
+
  private:
   static Handle make_handle(Index idx, std::uint32_t gen) {
     return Handle{(static_cast<std::uint64_t>(gen) << 32) | idx};

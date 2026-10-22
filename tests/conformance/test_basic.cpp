@@ -376,6 +376,50 @@ static void test_snapshot_reports_priority_order() {
   assert(snap.size() == 5);
 }
 
+// Corrupts the book through order_at()'s const_cast to prove each check can
+// actually fire. A checker that has never been seen failing proves nothing
+// once the fuzzer starts relying on it.
+static void test_invariants_hold_and_detect_corruption() {
+  Book book(8);
+  assert(book.invariant_violation() == nullptr);
+
+  book.add_limit_order(1, Side::Buy, 100, 5, kBuyAcct);
+  book.add_limit_order(2, Side::Buy, 100, 7, kBuyAcct);
+  book.add_limit_order(3, Side::Buy, 99, 4, kBuyAcct);
+  book.add_limit_order(4, Side::Sell, 103, 6, kSellAcct);
+  book.modify_order(1, 100, 9);
+  book.add_limit_order(5, Side::Buy, 103, 2, kBuyAcct);
+  book.cancel_order(3);
+  assert(book.invariant_violation() == nullptr);
+
+  Index head = book.head_at(Side::Buy, 100);
+  Index second = book.order_at(head).next_idx;
+  Order& h = const_cast<Order&>(book.order_at(head));
+  Order& s = const_cast<Order&>(book.order_at(second));
+
+  Index saved_prev = s.prev_idx;
+  s.prev_idx = kNilIndex;
+  assert(book.invariant_violation() != nullptr);
+  s.prev_idx = saved_prev;
+
+  Qty saved_qty = h.qty;
+  h.qty = 0;
+  assert(book.invariant_violation() != nullptr);
+  h.qty = saved_qty;
+
+  SeqNo saved_seq = s.seq_no;
+  s.seq_no = h.seq_no;
+  assert(book.invariant_violation() != nullptr);
+  s.seq_no = saved_seq;
+
+  OrderId saved_id = s.order_id;
+  s.order_id = 999;
+  assert(book.invariant_violation() != nullptr);
+  s.order_id = saved_id;
+
+  assert(book.invariant_violation() == nullptr);
+}
+
 int main() {
   test1_single_limit_rests();
   test2_best_bid_ask_tracking();
@@ -401,6 +445,7 @@ int main() {
   test18_invalid_input_rejected_at_ingress();
   test19_pool_exhaustion_is_clean_rejection();
   test_snapshot_reports_priority_order();
+  test_invariants_hold_and_detect_corruption();
   std::printf("conformance tests 1-19 (+8b, 8c, 12b, 14b): all passed\n");
   return 0;
 }
