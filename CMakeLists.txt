@@ -39,4 +39,8 @@ if(BUILD_TESTS)
   add_executable(test_oracle tests/oracle/test_oracle.cpp)
   target_link_libraries(test_oracle PRIVATE test_support)
   add_test(NAME oracle_self_check COMMAND test_oracle)
+
+  add_executable(fuzz_diff tests/fuzz/fuzz_diff.cpp)
+  target_link_libraries(fuzz_diff PRIVATE test_support)
+  add_test(NAME differential_fuzz COMMAND fuzz_diff 20 20000 1 8)
 endif()
