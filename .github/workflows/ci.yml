@@ -25,3 +25,28 @@ jobs:
 
       - name: Run conformance suite (ASan/UBSan)
         run: ctest --test-dir build --output-on-failure
+
+      # Seeds 101-108 don't overlap the ctest seeds (1-20) or the deep job's
+      # (1-100).
+      - name: Long differential fuzz (ASan/UBSan)
+        run: ./build/fuzz_diff 8 250000 101 32
+
+  differential-deep:
+    # Same sanitized build as above, but optimized: the full-depth
+    # exhaustive pass is too slow at -O0 to run on every push.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --parallel --target fuzz_diff exhaustive_diff
+
+      - name: Differential fuzz, 100 seeds x 1M ops
+        run: ./build/fuzz_diff 100 1000000 1 32
+
+      - name: Exhaustive state-space test, full depth
+        run: ./build/exhaustive_diff
