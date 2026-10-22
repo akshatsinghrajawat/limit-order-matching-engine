@@ -43,4 +43,8 @@ if(BUILD_TESTS)
   add_executable(fuzz_diff tests/fuzz/fuzz_diff.cpp)
   target_link_libraries(fuzz_diff PRIVATE test_support)
   add_test(NAME differential_fuzz COMMAND fuzz_diff 20 20000 1 8)
+
+  add_executable(exhaustive_diff tests/fuzz/exhaustive_diff.cpp)
+  target_link_libraries(exhaustive_diff PRIVATE test_support)
+  add_test(NAME differential_exhaustive_shallow COMMAND exhaustive_diff 3 3 4)
 endif()
