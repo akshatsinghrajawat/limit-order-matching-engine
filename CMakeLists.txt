@@ -29,4 +29,14 @@ if(BUILD_TESTS)
   add_executable(test_basic tests/conformance/test_basic.cpp)
   target_link_libraries(test_basic PRIVATE engine)
   add_test(NAME conformance_basic COMMAND test_basic)
+
+  # Test-only helpers. Kept out of include/ so nothing in the engine can
+  # depend on them.
+  add_library(test_support INTERFACE)
+  target_include_directories(test_support INTERFACE tests/support)
+  target_link_libraries(test_support INTERFACE engine)
+
+  add_executable(test_oracle tests/oracle/test_oracle.cpp)
+  target_link_libraries(test_oracle PRIVATE test_support)
+  add_test(NAME oracle_self_check COMMAND test_oracle)
 endif()
