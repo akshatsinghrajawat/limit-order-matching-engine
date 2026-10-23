@@ -50,3 +50,12 @@ jobs:
 
       - name: Exhaustive state-space test, full depth
         run: ./build/exhaustive_diff
+
+  mutation-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Mutation check
+        run: bash tools/mutation_check.sh
