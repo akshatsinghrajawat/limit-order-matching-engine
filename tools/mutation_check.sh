@@ -25,7 +25,7 @@ header=include/engine/book.hpp
 pristine=$work/book.hpp.orig
 
 mkdir "$src"
-cp -r "$root/include" "$root/tests" "$root/CMakeLists.txt" "$src/"
+cp -r "$root/include" "$root/tests" "$root/bench" "$root/CMakeLists.txt" "$src/"
 cp "$src/$header" "$pristine"
 
 cmake -S "$src" -B "$build" -DCMAKE_BUILD_TYPE=Debug \

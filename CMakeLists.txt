@@ -47,4 +47,14 @@ if(BUILD_TESTS)
   add_executable(exhaustive_diff tests/fuzz/exhaustive_diff.cpp)
   target_link_libraries(exhaustive_diff PRIVATE test_support)
   add_test(NAME differential_exhaustive_shallow COMMAND exhaustive_diff 3 3 4)
+
+  # Benchmark-side code lives in bench/, kept apart from include/ for the
+  # same reason as test_support: nothing in the engine may depend on it.
+  add_library(bench_support INTERFACE)
+  target_include_directories(bench_support INTERFACE bench)
+  target_link_libraries(bench_support INTERFACE engine)
+
+  add_executable(test_workload tests/bench/test_workload.cpp)
+  target_link_libraries(test_workload PRIVATE bench_support)
+  add_test(NAME bench_workload_w1 COMMAND test_workload)
 endif()

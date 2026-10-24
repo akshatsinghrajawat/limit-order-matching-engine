@@ -27,10 +27,35 @@ that the p99.9 latency bucket has at least 100 samples.
 
 - **W1 (baseline)**: 10,000-tick price span, average book depth ~1,000
   levels/side, 30% cancels, 50/50 buy/sell split, Zipf `s=1.0` price
-  concentration, order sizes 1–100 lots.
+  concentration, order sizes 1–100 lots. Defined by `bench/workload.hpp`
+  and pinned by `tests/bench/test_workload.cpp`. Limit orders and cancels
+  only: no modify, market, IOC or FOK. One account per order, so
+  self-trade prevention never fires.
 - Later workloads add: heavier cancel ratios (40%), bursty Poisson-arrival
   batches, deeper books. Each gets its own version number; no workload is
   silently modified in place.
+
+### How W1 holds its depth
+
+A fixed cancel probability doesn't hold a book at any size. A cancel removes
+one order whatever the book looks like, so the book grows forever or empties
+out. On this engine (cancels aimed at live orders, `cross_shift = 3`), 40%
+cancels grew to about 200,000 resting orders in 4M operations and 45%
+collapsed to a few dozen.
+
+So W1 scales the cancel probability by `resting / target_resting`. It is 30%
+when the book holds the target of 3,000 resting orders, about 1,000 levels
+per side. `cross_shift = 50` makes about half of all limit orders marketable,
+and it is the value where the cancel share settles at 30%. Over 4M
+operations: 30.4% cancels, 1,010 to 1,110 levels per side, about 56% of
+limit orders trading, no drift. The generator runs its commands through the
+engine as it goes, so every cancel hits a live order.
+
+Two things to keep in mind when reading W1 results. The cancel share comes
+out of the controller and isn't a setting, so changing `cross_shift` changes
+it. And because the engine generates the stream, a change that alters the
+engine's trades changes the workload; the golden hash in the test is there
+to catch that.
 
 ## Metrics
 
