@@ -8,9 +8,18 @@ CSV names which version of this doc it was produced under.
 
 ## Environment block (required in every result file)
 
-CPU model, core pinned (`taskset` / `pthread_setaffinity_np`), governor set
+CPU model, core pinned (`taskset` / `sched_setaffinity`), governor set
 to `performance`, turbo state, RAM, kernel version, compiler + flags
 (`-O3 -march=native -fno-plt`), binary hash.
+
+`bench/env.hpp` writes the block as `# key: value` lines at the top of a
+results file: `cpu_model`, `pinned_cpu`, `governor`, `turbo`, `ram`,
+`kernel`, `compiler`, `flags`, `tsc`, `binary_hash`. `pinned_cpu` is read
+back from the kernel's affinity mask, not taken from what the program asked
+for. A field that can't be read says `unavailable`. Governor, turbo, RAM,
+kernel and the hash come from `/sys`, `/proc` and `uname`, so only Linux
+fills them all in; published numbers come from Linux runs, and a Windows
+build is for development.
 
 ## Timing
 
@@ -19,6 +28,11 @@ overhead exceeds 1% of the operation cost being measured, switch to batched
 timing (N ops per `rdtscp` pair) instead — decided by measurement (tests
 26–27), not assumed up front. Every published number states which mode
 produced it.
+
+Ticks become nanoseconds through a rate measured against `steady_clock`
+during a 20 ms spin at startup (`TscClock` in `bench/timing.hpp`). The `tsc`
+line of the environment block records that rate and whether the CPU reports
+an invariant counter.
 
 Warmup: at least 100,000 operations before any measured run. Report N such
 that the p99.9 latency bucket has at least 100 samples.

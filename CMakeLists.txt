@@ -54,7 +54,22 @@ if(BUILD_TESTS)
   target_include_directories(bench_support INTERFACE bench)
   target_link_libraries(bench_support INTERFACE engine)
 
+  # What the environment block records as compiler and flags. The flags come
+  # from the directory property so the sanitizer and warning options added
+  # with add_compile_options are included, not just CMAKE_CXX_FLAGS.
+  get_directory_property(bench_options COMPILE_OPTIONS)
+  list(JOIN bench_options " " bench_options)
+  string(TOUPPER "${CMAKE_BUILD_TYPE}" bench_build_type)
+  string(STRIP "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${bench_build_type}} ${bench_options}" bench_flags)
+  target_compile_definitions(bench_support INTERFACE
+    BENCH_COMPILER="${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}"
+    BENCH_FLAGS="${bench_flags}")
+
   add_executable(test_workload tests/bench/test_workload.cpp)
   target_link_libraries(test_workload PRIVATE bench_support)
   add_test(NAME bench_workload_w1 COMMAND test_workload)
+
+  add_executable(test_timing tests/bench/test_timing.cpp)
+  target_link_libraries(test_timing PRIVATE bench_support)
+  add_test(NAME bench_timing COMMAND test_timing)
 endif()
