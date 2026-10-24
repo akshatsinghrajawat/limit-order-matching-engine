@@ -10,12 +10,12 @@
 
 #include "oracle.hpp"
 
-#define CHECK(c)                                                          \
-  do {                                                                    \
-    if (!(c)) {                                                           \
+#define CHECK(c)                                                                 \
+  do {                                                                           \
+    if (!(c)) {                                                                  \
       std::fprintf(stderr, "%s:%d: CHECK failed: %s\n", __FILE__, __LINE__, #c); \
-      std::abort();                                                       \
-    }                                                                     \
+      std::abort();                                                              \
+    }                                                                            \
   } while (0)
 
 using namespace oracle;
