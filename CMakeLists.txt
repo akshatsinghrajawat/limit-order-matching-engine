@@ -77,8 +77,15 @@ if(BUILD_TESTS)
   target_link_libraries(test_runner PRIVATE bench_support)
   add_test(NAME bench_runner COMMAND test_runner)
 
-  # Not a test, run it by hand. See the usage comment in the source for the
-  # build it needs to produce numbers worth keeping.
+  add_executable(test_noise tests/bench/test_noise.cpp)
+  target_link_libraries(test_noise PRIVATE bench_support)
+  add_test(NAME bench_noise_pieces COMMAND test_noise)
+
+  # Not tests, run them by hand. See the usage comment in each source for
+  # the build they need to produce numbers worth keeping.
   add_executable(bench_w1 bench/bench_w1.cpp)
   target_link_libraries(bench_w1 PRIVATE bench_support)
+
+  add_executable(bench_noise bench/bench_noise.cpp)
+  target_link_libraries(bench_noise PRIVATE bench_support)
 endif()

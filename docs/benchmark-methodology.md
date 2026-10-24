@@ -107,11 +107,37 @@ blended number hides exactly the thing worth looking at.
 
 ## Harness validation (must pass before any number is trusted)
 
-- **Test 26 — noise floor**: benchmark a no-op loop; p99 variance across 10
-  runs must stay within a documented threshold.
+- **Test 26 — noise floor**: `bench_noise` times an empty region ten times
+  (1,000,000 operations per run, after a 100,000-operation warmup) and
+  compares the p99 of each run. The highest p99 minus the lowest must be at
+  most 10 ns. Details below.
 - **Test 27 — overhead check**: quantify measurement overhead
   (batched-timing vs. per-op `rdtscp`) and either subtract it or document it
   alongside every number it affects.
+
+### Noise floor
+
+The empty region is timed exactly as `bench_w1` times a command, two
+`rdtscp` reads around nothing, so the p99 spread measured here is the
+spread of the timer and the machine with no engine code involved. A p99
+difference between two configurations smaller than that spread isn't
+claimed as a result.
+
+The limit is in nanoseconds, not a fraction of the p99, because the no-op's
+p99 is about 30 ns and a fraction of that says little about whether an
+operation costing a few hundred ns can be measured. 10 ns is a judgment
+call. Seven passes of ten runs on a shared cloud VM, core pinned, gave
+spreads from 1.9 to 14.3 ns and one of them was over the limit. A machine
+that fails at random isn't one to publish from. If the machine that
+produces the published numbers stays well under 10 ns, tighten the limit
+and bump the version.
+
+`bench_noise` exits 1 over the limit. Run it on the same core and the same
+kind of build (Release, sanitizers off) as the benchmark itself, before
+trusting any number from that setup, and commit its results file next to the
+numbers it vouches for. The unit test only checks the arithmetic and the
+file layout; a loaded CI runner would fail a real noise check for reasons
+unrelated to the code.
 
 ## Publishing
 
