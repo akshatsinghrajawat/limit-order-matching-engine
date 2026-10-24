@@ -72,4 +72,13 @@ if(BUILD_TESTS)
   add_executable(test_timing tests/bench/test_timing.cpp)
   target_link_libraries(test_timing PRIVATE bench_support)
   add_test(NAME bench_timing COMMAND test_timing)
+
+  add_executable(test_runner tests/bench/test_runner.cpp)
+  target_link_libraries(test_runner PRIVATE bench_support)
+  add_test(NAME bench_runner COMMAND test_runner)
+
+  # Not a test, run it by hand. See the usage comment in the source for the
+  # build it needs to produce numbers worth keeping.
+  add_executable(bench_w1 bench/bench_w1.cpp)
+  target_link_libraries(bench_w1 PRIVATE bench_support)
 endif()

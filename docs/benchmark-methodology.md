@@ -2,9 +2,13 @@
 
 # Benchmark methodology
 
+**Version 1.**
+
 No number gets published without the environment and method that produced
 it. This document is versioned alongside `bench/results/`; every results
-CSV names which version of this doc it was produced under.
+CSV names which version of this doc it was produced under. The version
+number goes up when the way numbers are produced changes, and the change
+is described here.
 
 ## Environment block (required in every result file)
 
@@ -36,6 +40,29 @@ an invariant counter.
 
 Warmup: at least 100,000 operations before any measured run. Report N such
 that the p99.9 latency bucket has at least 100 samples.
+
+## Running it
+
+`bench_w1 <label> [seed] [measured_ops] [cpu]` writes a results file to
+stdout. It runs the same command stream twice, each time on a fresh book
+after a 100,000-operation warmup. One pass is timed per operation and gives
+the latency percentiles. The other is timed as a whole and gives throughput,
+so throughput doesn't include the cost of the per-operation timestamps.
+Throughput counts every operation, cancels included. The two passes must
+produce the same number of trades, or the run aborts.
+
+Latency is reported separately for limit orders and for cancels. Percentiles
+are nearest-rank over the sorted samples. The runner refuses to run with
+fewer than 100,000 samples of either kind, which is what the 100-sample
+p99.9 bucket rule works out to; the 1,000,000 measured operations it
+defaults to leave about 300,000 cancels. The p99.99 column needs ten times
+that many samples before its bucket holds 100, so read it as indicative.
+
+The results file starts with the environment block, then `# key: value`
+lines for the methodology version, label, workload, seed, warmup and
+measured counts, timing mode, trade count and throughput, then one CSV
+table with a row per kind. A build with sanitizers on prints a warning,
+and its flags line shows it; those numbers aren't published.
 
 ## Workloads (versioned: W1, W2, ...)
 
