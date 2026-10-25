@@ -1,0 +1,24 @@
+# cpu_model: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz
+# pinned_cpu: 3
+# governor: performance
+# turbo: disabled
+# ram: 15753 MiB
+# kernel: Linux 7.0.0-38-generic
+# compiler: GNU 15.2.0
+# flags: -O3 -march=native -fno-plt -O3 -DNDEBUG -Wall -Wextra -Wpedantic
+# tsc: invariant, 2.4192 GHz
+# binary_hash: 210b2160573fab3e
+# methodology_version: 1
+# test: 27, measurement overhead
+# workload: W1
+# seed: 1
+# warmup_ops: 100000
+# measured_ops: 1000000
+# limit_percent: 1.0
+# one_percent_rule: exceeded
+rep,batched_ns_per_op,per_op_mean_ns,empty_p50_ns,empty_share_percent
+1,217.9,250.3,21.1,9.7
+2,217.7,250.4,21.1,9.7
+3,217.4,249.9,21.1,9.7
+4,216.6,248.9,21.1,9.7
+5,215.9,248.7,21.1,9.8

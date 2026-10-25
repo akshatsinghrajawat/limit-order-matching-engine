@@ -1,0 +1,28 @@
+# cpu_model: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz
+# pinned_cpu: 3
+# governor: performance
+# turbo: disabled
+# ram: 15753 MiB
+# kernel: Linux 7.0.0-38-generic
+# compiler: GNU 15.2.0
+# flags: -O3 -march=native -fno-plt -O3 -DNDEBUG -Wall -Wextra -Wpedantic
+# tsc: invariant, 2.4192 GHz
+# binary_hash: e31c10b8b285af49
+# methodology_version: 1
+# test: 26, noise floor, empty timed region
+# ops_per_run: 1000000
+# timing: per-op rdtscp+lfence
+# p99_spread_ns: 0.0
+# max_p99_spread_ns: 10.0
+# verdict: pass
+run,p50_ns,p99_ns,p999_ns,max_ns
+1,21.9,22.7,22.7,21666.5
+2,21.9,22.7,22.7,11627.7
+3,21.9,22.7,22.7,112246.0
+4,21.9,22.7,23.6,20124.6
+5,21.9,22.7,22.7,14390.2
+6,21.9,22.7,22.7,25092.8
+7,21.9,22.7,23.1,125164.6
+8,21.9,22.7,23.1,113944.5
+9,21.9,22.7,23.1,12430.4
+10,21.9,22.7,22.7,14484.0
