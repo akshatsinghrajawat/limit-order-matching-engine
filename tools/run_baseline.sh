@@ -10,10 +10,14 @@
 # pairs). <label> names the setup, e.g. ubuntu-i5-1235u, and prefixes the
 # files in bench/results/.
 #
-# Linux only. The governor has to be `performance`; the check reads it for
-# the chosen core. Set ALLOW_ANY_GOVERNOR=1 to run anyway, for trying the
-# script out on a machine that can't set it. The results file still records
-# whatever the governor was, so such a run says what it is.
+# Linux only. The governor has to be `performance` and turbo has to be off
+# (echo 1 | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo). Power
+# managers such as auto-cpufreq and power-profiles-daemon change both while
+# a benchmark runs, so stop them first. The governor is checked before
+# starting; both settings are checked again in what the results files
+# recorded, which is read after the measurements. Set ALLOW_UNTUNED_MACHINE=1
+# to skip the checks, for trying the script out on a machine that can't set
+# them. The files still record what the settings were.
 #
 # Nothing lands in bench/results/ unless every step succeeds, and an
 # existing file is never overwritten.
@@ -36,6 +40,12 @@ case $label in
   '' | *[!A-Za-z0-9._-]*) echo "label may only contain letters, digits, . _ -" >&2; exit 2 ;;
 esac
 
+# True if the results file says the governor was performance and turbo was
+# disabled when it was written.
+recorded_tuned() {
+  grep -qx '# governor: performance' "$1" && grep -qx '# turbo: disabled' "$1"
+}
+
 root=$(cd "$(dirname "$0")/.." && pwd)
 results=$root/bench/results
 build=$root/cmake-build-bench
@@ -54,7 +64,7 @@ done
 
 governor_file=/sys/devices/system/cpu/cpu$cpu/cpufreq/scaling_governor
 governor=$(cat "$governor_file" 2>/dev/null || echo unavailable)
-if [ "$governor" != performance ] && [ "${ALLOW_ANY_GOVERNOR:-0}" != 1 ]; then
+if [ "$governor" != performance ] && [ "${ALLOW_UNTUNED_MACHINE:-0}" != 1 ]; then
   echo "cpu $cpu governor is '$governor', the methodology needs 'performance'." >&2
   echo "  sudo cpupower frequency-set -g performance" >&2
   exit 1
@@ -82,6 +92,17 @@ echo "measurement overhead (test 27)"
 "$build/bench_overhead" 1 1000000 "$cpu" > "$work/overhead.csv"
 echo "W1"
 "$build/bench_w1" "$label" 1 1000000 "$cpu" > "$work/w1.csv"
+
+if [ "${ALLOW_UNTUNED_MACHINE:-0}" != 1 ]; then
+  for kind in noise overhead w1; do
+    if ! recorded_tuned "$work/$kind.csv"; then
+      echo "the $kind results don't record governor performance and turbo disabled:" >&2
+      grep -h '^# \(governor\|turbo\):' "$work/$kind.csv" >&2
+      echo "a power manager probably changed them during the run; stop it and retry" >&2
+      exit 1
+    fi
+  done
+fi
 
 for kind in noise overhead w1; do
   cp "$work/$kind.csv" "$results/$label-$kind.csv"

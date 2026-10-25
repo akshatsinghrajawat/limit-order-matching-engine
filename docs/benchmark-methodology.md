@@ -98,10 +98,24 @@ It writes `<label>-noise.csv`, `<label>-overhead.csv` and `<label>-w1.csv`
 to `bench/results/`, only if all three steps worked, and never over an
 existing file.
 
-It refuses to start unless that core's governor is `performance`. Pick a
-core nothing else is using, not core 0, and with its hyperthread sibling
-idle if the CPU has one (`lscpu -e` lists the pairs). Close everything else
-first; a browser is enough to move the p99.
+It refuses to start unless that core's governor is `performance`, and it
+refuses to keep the results unless the files themselves record governor
+`performance` and turbo `disabled`. The environment block is read after the
+measurements, so a setting that changed mid-run shows up there. Turbo off
+is `echo 1 | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo`.
+
+Stop power managers before running. On the Ubuntu laptop used for the
+baseline, auto-cpufreq set turbo back on as soon as the benchmark put load
+on the core: the clock went from 2.4 to about 3.8 GHz, the empty-timer cost
+went from 22 to 12 ns partway through the first noise run, and throughput
+moved by up to 11% between runs. With it stopped (`sudo snap stop
+auto-cpufreq`), turbo off and the governor set, the core held 2.4 GHz under
+load. `power-profiles-daemon` was also running and is the next suspect if a
+setting still changes.
+
+Pick a core nothing else is using, not core 0, and with its hyperthread
+sibling idle if the CPU has one (`lscpu -e` lists the pairs). Close
+everything else first; a browser is enough to move the p99.
 
 The three files are committed together under the methodology version they
 state. A W1 file without the noise and overhead files next to it from the
