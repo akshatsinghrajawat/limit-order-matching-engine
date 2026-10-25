@@ -41,6 +41,30 @@ an invariant counter.
 Warmup: at least 100,000 operations before any measured run. Report N such
 that the p99.9 latency bucket has at least 100 samples.
 
+### Decision from test 27
+
+An empty timed region costs about 25 ns on the machine used so far, which is
+11 to 17% of an average W1 operation (five runs: 11.1, 14.7, 16.7, 15.6 and
+13.5%). That is far over the 1% line, so:
+
+- **Throughput is the batched figure.** One `rdtscp` pair around all the
+  measured operations, which spreads the timer cost over all of them.
+- **Latency percentiles stay per-operation.** A batch gives an average,
+  not a distribution, so the percentiles can't be batched. They include the
+  timer cost.
+- **The timer cost is recorded, not subtracted.** Every results file carries
+  `timer_overhead_p50_ns`, measured at the start of that run, and names both
+  timing modes (`latency_timing`, `throughput_timing`). Read each latency as
+  including about that many nanoseconds.
+
+Nothing is subtracted because the data doesn't show it would be right. The
+shared VM these runs came from moved the batched cost itself by about 40%
+between repetitions (159 to 223 ns), which is more than the effect being
+checked, so it can't say whether the mean per-operation sample minus the
+empty-region cost recovers the batched cost. Run `bench_overhead` on the
+machine that publishes numbers, and if that difference is small and steady
+there, subtracting becomes defensible and this section should change.
+
 ## Running it
 
 `bench_w1 <label> [seed] [measured_ops] [cpu]` writes a results file to
@@ -60,8 +84,8 @@ that many samples before its bucket holds 100, so read it as indicative.
 
 The results file starts with the environment block, then `# key: value`
 lines for the methodology version, label, workload, seed, warmup and
-measured counts, timing mode, trade count and throughput, then one CSV
-table with a row per kind. A build with sanitizers on prints a warning,
+measured counts, the two timing modes and the timer overhead, trade count
+and throughput, then one CSV table with a row per kind. A build with sanitizers on prints a warning,
 and its flags line shows it; those numbers aren't published.
 
 ## Workloads (versioned: W1, W2, ...)
@@ -111,9 +135,11 @@ blended number hides exactly the thing worth looking at.
   (1,000,000 operations per run, after a 100,000-operation warmup) and
   compares the p99 of each run. The highest p99 minus the lowest must be at
   most 10 ns. Details below.
-- **Test 27 — overhead check**: quantify measurement overhead
-  (batched-timing vs. per-op `rdtscp`) and either subtract it or document it
-  alongside every number it affects.
+- **Test 27 — overhead check**: `bench_overhead` runs W1 five times and
+  reports, for each run, the batched cost per operation, the mean of the
+  per-operation samples, the p50 of an empty timed region, and the empty
+  region's share of the batched cost. It quantifies and doesn't pass or
+  fail. The decision it feeds is under "Timing".
 
 ### Noise floor
 

@@ -4,6 +4,7 @@
 // speed.
 //
 // CHECK instead of assert so a Release build (-DNDEBUG) still verifies.
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -75,6 +76,8 @@ static void stats_are_ordered_and_positive(const RunResult& r) {
     CHECK(s.p50 <= s.p99 && s.p99 <= s.p999 && s.p999 <= s.p9999 && s.p9999 <= s.max);
   }
   CHECK(r.ops_per_sec > 0);
+  CHECK(r.per_op_mean_ns > 0);
+  CHECK(r.per_op_mean_ns <= std::max(r.limit.max, r.cancel.max));
 }
 
 static std::vector<std::string> split(const std::string& s, char sep) {
@@ -91,11 +94,12 @@ static void csv_has_the_documented_layout(const RunResult& r) {
   cfg.seed = 1;
   cfg.warmup = kWarmup;
   cfg.measured = kMeasured;
+  cfg.timer_overhead_ns = 24.84;
   const std::string csv = results_csv("# cpu_model: test\n", cfg, r);
 
   std::vector<std::string> lines = split(csv, '\n');
   CHECK(csv.back() == '\n');
-  CHECK(lines.size() == 1 + 8 + 1 + 1 + 2);  // env, metadata, throughput, header, two rows
+  CHECK(lines.size() == 1 + 10 + 1 + 1 + 2);  // env, metadata, throughput, header, two rows
 
   CHECK(lines[0] == "# cpu_model: test");
   CHECK(lines[1] == "# methodology_version: 1");
@@ -104,16 +108,18 @@ static void csv_has_the_documented_layout(const RunResult& r) {
   CHECK(lines[4] == "# seed: 1");
   CHECK(lines[5] == "# warmup_ops: 5000");
   CHECK(lines[6] == "# measured_ops: 30000");
-  CHECK(lines[7] == "# timing: per-op rdtscp+lfence, overhead not subtracted");
-  CHECK(lines[8] == "# trades: " + std::to_string(r.trades));
-  CHECK(lines[9].compare(0, 25, "# throughput_ops_per_sec:") == 0);
-  CHECK(lines[10] == "kind,samples,p50_ns,p99_ns,p999_ns,p9999_ns,max_ns");
+  CHECK(lines[7] == "# latency_timing: per-op rdtscp+lfence, timer overhead not subtracted");
+  CHECK(lines[8] == "# timer_overhead_p50_ns: 24.8");
+  CHECK(lines[9] == "# throughput_timing: batched, one rdtscp pair around all measured ops");
+  CHECK(lines[10] == "# trades: " + std::to_string(r.trades));
+  CHECK(lines[11].compare(0, 25, "# throughput_ops_per_sec:") == 0);
+  CHECK(lines[12] == "kind,samples,p50_ns,p99_ns,p999_ns,p9999_ns,max_ns");
 
-  for (int i = 11; i <= 12; ++i) {
+  for (int i = 13; i <= 14; ++i) {
     std::vector<std::string> f = split(lines[i], ',');
     CHECK(f.size() == 7);
-    CHECK(f[0] == (i == 11 ? "limit" : "cancel"));
-    CHECK(std::stoull(f[1]) == (i == 11 ? r.limit.samples : r.cancel.samples));
+    CHECK(f[0] == (i == 13 ? "limit" : "cancel"));
+    CHECK(std::stoull(f[1]) == (i == 13 ? r.limit.samples : r.cancel.samples));
   }
 }
 

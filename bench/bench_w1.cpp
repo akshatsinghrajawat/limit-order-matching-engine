@@ -10,6 +10,7 @@
 #include <string>
 
 #include "env.hpp"
+#include "noise.hpp"
 #include "runner.hpp"
 #include "timing.hpp"
 #include "workload.hpp"
@@ -35,6 +36,8 @@ int main(int argc, char** argv) {
 
   // Calibrated after pinning so the rate is measured on the core being used.
   const bench::TscClock clock;
+  bench::noop_run(bench::kNoiseWarmup, clock);
+  cfg.timer_overhead_ns = bench::noop_run(bench::kNoiseOps, clock).p50;
   const auto cmds = bench::generate(bench::W1Params{}, cfg.seed, cfg.warmup + cfg.measured);
 
   const bench::KindCounts n = bench::count_kinds(cmds, cfg.warmup);

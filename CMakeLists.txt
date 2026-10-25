@@ -81,6 +81,10 @@ if(BUILD_TESTS)
   target_link_libraries(test_noise PRIVATE bench_support)
   add_test(NAME bench_noise_pieces COMMAND test_noise)
 
+  add_executable(test_overhead tests/bench/test_overhead.cpp)
+  target_link_libraries(test_overhead PRIVATE bench_support)
+  add_test(NAME bench_overhead_pieces COMMAND test_overhead)
+
   # Not tests, run them by hand. See the usage comment in each source for
   # the build they need to produce numbers worth keeping.
   add_executable(bench_w1 bench/bench_w1.cpp)
@@ -88,4 +92,7 @@ if(BUILD_TESTS)
 
   add_executable(bench_noise bench/bench_noise.cpp)
   target_link_libraries(bench_noise PRIVATE bench_support)
+
+  add_executable(bench_overhead bench/bench_overhead.cpp)
+  target_link_libraries(bench_overhead PRIVATE bench_support)
 endif()

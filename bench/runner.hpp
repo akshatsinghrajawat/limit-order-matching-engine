@@ -38,6 +38,9 @@ struct RunConfig {
   std::uint64_t seed = 1;
   std::size_t warmup = 100000;
   std::size_t measured = 1000000;
+  // p50 of an empty timed region on this machine, measured at the start of
+  // the run (noop_run in noise.hpp). Recorded, not subtracted.
+  double timer_overhead_ns = 0;
 };
 
 struct LatencyStats {
@@ -47,7 +50,8 @@ struct LatencyStats {
 
 struct RunResult {
   LatencyStats limit, cancel;
-  double ops_per_sec = 0;
+  double ops_per_sec = 0;  // batched: one rdtscp pair around all measured ops
+  double per_op_mean_ns = 0;  // mean of the per-op samples, timer overhead included
   std::uint64_t trades = 0;  // in the measured part only
 };
 
@@ -130,6 +134,11 @@ inline RunResult run(const std::vector<Cmd>& cmds, std::size_t warmup, const Tsc
                  static_cast<unsigned long long>(r.trades), static_cast<unsigned long long>(whole_trades));
     std::abort();
   }
+  std::uint64_t total_ticks = 0;
+  for (std::uint64_t t : limit_ticks) total_ticks += t;
+  for (std::uint64_t t : cancel_ticks) total_ticks += t;
+  r.per_op_mean_ns = clock.to_ns(total_ticks) / static_cast<double>(measured);
+
   r.limit = stats_from(limit_ticks, clock);
   r.cancel = stats_from(cancel_ticks, clock);
   return r;
@@ -145,10 +154,14 @@ inline std::string results_csv(const std::string& env_block, const RunConfig& cf
   out << "# seed: " << cfg.seed << '\n';
   out << "# warmup_ops: " << cfg.warmup << '\n';
   out << "# measured_ops: " << cfg.measured << '\n';
-  out << "# timing: per-op rdtscp+lfence, overhead not subtracted\n";
-  out << "# trades: " << r.trades << '\n';
+  out << "# latency_timing: per-op rdtscp+lfence, timer overhead not subtracted\n";
 
   char buf[160];
+  std::snprintf(buf, sizeof buf, "# timer_overhead_p50_ns: %.1f\n", cfg.timer_overhead_ns);
+  out << buf;
+
+  out << "# throughput_timing: batched, one rdtscp pair around all measured ops\n";
+  out << "# trades: " << r.trades << '\n';
   std::snprintf(buf, sizeof buf, "# throughput_ops_per_sec: %.0f\n", r.ops_per_sec);
   out << buf;
 
