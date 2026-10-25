@@ -88,6 +88,25 @@ measured counts, the two timing modes and the timer overhead, trade count
 and throughput, then one CSV table with a row per kind. A build with sanitizers on prints a warning,
 and its flags line shows it; those numbers aren't published.
 
+## Producing a baseline
+
+`tools/run_baseline.sh <cpu> <label>` does the whole sequence on one core:
+a Release build with sanitizers off and `-O3 -march=native -fno-plt`, then
+`bench_noise`, `bench_overhead` and `bench_w1`, in that order. If the noise
+floor fails it stops, since nothing measured on that setup can be trusted.
+It writes `<label>-noise.csv`, `<label>-overhead.csv` and `<label>-w1.csv`
+to `bench/results/`, only if all three steps worked, and never over an
+existing file.
+
+It refuses to start unless that core's governor is `performance`. Pick a
+core nothing else is using, not core 0, and with its hyperthread sibling
+idle if the CPU has one (`lscpu -e` lists the pairs). Close everything else
+first; a browser is enough to move the p99.
+
+The three files are committed together under the methodology version they
+state. A W1 file without the noise and overhead files next to it from the
+same run isn't a published result.
+
 ## Workloads (versioned: W1, W2, ...)
 
 - **W1 (baseline)**: 10,000-tick price span, average book depth ~1,000
