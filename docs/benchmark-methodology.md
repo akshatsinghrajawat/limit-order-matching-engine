@@ -43,9 +43,10 @@ that the p99.9 latency bucket has at least 100 samples.
 
 ### Decision from test 27
 
-An empty timed region costs about 25 ns on the machine used so far, which is
-11 to 17% of an average W1 operation (five runs: 11.1, 14.7, 16.7, 15.6 and
-13.5%). That is far over the 1% line, so:
+On the baseline machine (`bench/results/ubuntu-i5-1135G7-overhead.csv`, five
+runs) an empty timed region costs 21.1 ns, which is 9.7 to 9.8% of the 216
+to 218 ns an average W1 operation costs when timed in batch. That is far
+over the 1% line, so:
 
 - **Throughput is the batched figure.** One `rdtscp` pair around all the
   measured operations, which spreads the timer cost over all of them.
@@ -54,16 +55,23 @@ An empty timed region costs about 25 ns on the machine used so far, which is
   timer cost.
 - **The timer cost is recorded, not subtracted.** Every results file carries
   `timer_overhead_p50_ns`, measured at the start of that run, and names both
-  timing modes (`latency_timing`, `throughput_timing`). Read each latency as
-  including about that many nanoseconds.
+  timing modes (`latency_timing`, `throughput_timing`).
 
-Nothing is subtracted because the data doesn't show it would be right. The
-shared VM these runs came from moved the batched cost itself by about 40%
-between repetitions (159 to 223 ns), which is more than the effect being
-checked, so it can't say whether the mean per-operation sample minus the
-empty-region cost recovers the batched cost. Run `bench_overhead` on the
-machine that publishes numbers, and if that difference is small and steady
-there, subtracting becomes defensible and this section should change.
+The empty timer is not the whole effect. The mean per-operation sample
+comes out 32.3 to 32.8 ns above the batched cost per operation, 15% of it,
+in all five runs. Subtracting the empty-region cost leaves 11.2 to 11.7 ns
+unexplained. The likely cause is that `lfence` stops neighbouring operations
+from overlapping in the pipeline, so per-operation timing makes the
+operation itself slower and not just longer to read. That is a guess and
+isn't verified. Read each latency in the baseline files as including about
+32 ns.
+
+The offset is steady (the batched cost itself moved by less than 1% across
+the five runs) but it is a difference of means. Nothing shows that a
+constant shift applies to a percentile, and part of it is unexplained, so
+nothing is subtracted. The share grows as the engine gets faster: at 100 ns
+per operation the same 32 ns would be a third of it. Revisit this when the
+optimization campaign gets there.
 
 ## Running it
 
@@ -85,8 +93,9 @@ that many samples before its bucket holds 100, so read it as indicative.
 The results file starts with the environment block, then `# key: value`
 lines for the methodology version, label, workload, seed, warmup and
 measured counts, the two timing modes and the timer overhead, trade count
-and throughput, then one CSV table with a row per kind. A build with sanitizers on prints a warning,
-and its flags line shows it; those numbers aren't published.
+and throughput, then one CSV table with a row per kind. A build with
+sanitizers on prints a warning, and its flags line shows it; those numbers
+aren't published.
 
 ## Producing a baseline
 
@@ -183,13 +192,30 @@ difference between two configurations smaller than that spread isn't
 claimed as a result.
 
 The limit is in nanoseconds, not a fraction of the p99, because the no-op's
-p99 is about 30 ns and a fraction of that says little about whether an
+p99 is about 22 to 30 ns and a fraction of that says little about whether an
 operation costing a few hundred ns can be measured. 10 ns is a judgment
-call. Seven passes of ten runs on a shared cloud VM, core pinned, gave
-spreads from 1.9 to 14.3 ns and one of them was over the limit. A machine
-that fails at random isn't one to publish from. If the machine that
-produces the published numbers stays well under 10 ns, tighten the limit
-and bump the version.
+call, set from a shared cloud VM where seven passes of ten runs gave spreads
+from 1.9 to 14.3 ns. On the baseline machine, with turbo off and power
+managers stopped, the spread was 0.0 to 1.7 ns, so 10 ns is loose there.
+
+It is also loose enough to pass a bad setup. With turbo left to auto-cpufreq,
+one run had nine runs at an empty-timer p50 of 21.9 ns and then a tenth at
+12.8 ns, because turbo came on partway through and the clock went from 2.4
+to about 3.8 GHz. The spread was 8.3 ns and the test passed. A limit of 3 ns
+would have caught it. `tools/run_baseline.sh` now covers that case by refusing
+results whose files don't record turbo disabled and the `performance`
+governor. The limit stays at 10 ns for now because the committed baseline
+was produced under it; tighten it with the next version bump.
+
+What the gate can't see is interference above p99. It compares one
+percentile, and the empty loop's `max` column shows spikes of 50 to 110 µs.
+Two consecutive W1 runs on the baseline machine agreed on p50 and p99
+within 1.5% and on p99.9 within 8%, but their p99.99 differed by a factor of
+two or more (limit 6.8 and 3.6 µs, cancel 8.1 and 3.4 µs). Those
+columns rest on about 70 and 30 samples and are hit by timer ticks and
+other interrupts. Keeping them out of the way takes boot-time settings
+(`isolcpus`, `nohz_full`, `irqaffinity`) that the baseline doesn't use, so
+read p99.99 as indicative only.
 
 `bench_noise` exits 1 over the limit. Run it on the same core and the same
 kind of build (Release, sanitizers off) as the benchmark itself, before
@@ -197,6 +223,22 @@ trusting any number from that setup, and commit its results file next to the
 numbers it vouches for. The unit test only checks the arithmetic and the
 file layout; a loaded CI runner would fail a real noise check for reasons
 unrelated to the code.
+
+## Baseline
+
+`bench/results/ubuntu-i5-1135G7-{noise,overhead,w1}.csv`, methodology
+version 1: an 11th Gen Intel Core i5-1135G7 laptop, core 3 of 8, Linux
+7.0.0-38, GCC 15.2, `-O3 -march=native -fno-plt`, turbo off at 2.4 GHz,
+`performance` governor, auto-cpufreq stopped. W1, seed 1, 1,000,000 measured
+operations after 100,000 of warmup.
+
+The engine at this point is the first correct version: `std::map` price
+levels and an `std::unordered_map` id lookup, with no allocation work done. It is where the
+optimization campaign starts from, not a result to quote on its own. A second
+full run on the same setup agreed on throughput to 0.07% (4.65 million
+operations per second in both) and on p50 and p99 within 1.5%, so a change
+smaller than that isn't distinguishable from run-to-run variation. The
+columns above p99.9 carry the caveat in the noise floor section.
 
 ## Publishing
 
