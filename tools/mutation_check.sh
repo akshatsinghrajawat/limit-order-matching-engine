@@ -142,8 +142,8 @@ check market-never-crosses 1 \
   '[](Price, Price) { return true; }' \
   '[](Price, Price) { return false; }'
 check duplicate-id-accepted 1 \
-  'if (qty == 0 || id_map_.count(order_id) != 0) return result;' \
-  'if (qty == 0) return result;'
+  'if (qty == 0 || id_map_.count(order_id) != 0) return;' \
+  'if (qty == 0) return;'
 
 # S2/S6: modify and priority
 check modify-equal-qty-loses-priority 1 \

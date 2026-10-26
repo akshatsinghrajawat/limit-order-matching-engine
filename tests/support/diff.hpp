@@ -84,17 +84,20 @@ class Pair {
   engine::Book book;
   oracle::Oracle ref;
   Stats stats;
+  // One result reused for every command, so a stale field or an unreleased
+  // trade left from the previous command shows up as a divergence.
+  engine::Book::AddResult result;
 
   // Empty string means the engine and the oracle agreed on this operation.
   std::string apply(const Op& op) {
     ++stats.ops;
     switch (op.kind) {
       case Kind::Limit:
-        return compare_add(op, book.add_limit_order(op.id, op.side, op.price, op.qty, op.account, op.tif),
-                           ref.add_limit(op.id, op.side, op.price, op.qty, op.account, op.tif));
+        book.add_limit_order(result, op.id, op.side, op.price, op.qty, op.account, op.tif);
+        return compare_add(op, result, ref.add_limit(op.id, op.side, op.price, op.qty, op.account, op.tif));
       case Kind::Market:
-        return compare_add(op, book.add_market_order(op.id, op.side, op.qty, op.account),
-                           ref.add_market(op.id, op.side, op.qty, op.account));
+        book.add_market_order(result, op.id, op.side, op.qty, op.account);
+        return compare_add(op, result, ref.add_market(op.id, op.side, op.qty, op.account));
       case Kind::Cancel: {
         bool a = book.cancel_order(op.id);
         bool b = ref.cancel(op.id);

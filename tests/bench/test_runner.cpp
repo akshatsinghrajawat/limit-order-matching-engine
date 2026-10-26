@@ -61,9 +61,10 @@ static void counts_and_trades_match_an_untimed_replay(const std::vector<Cmd>& cm
   CHECK(r.cancel.samples == n.cancel);
 
   engine::Book book(kBookCapacity);
+  engine::Book::AddResult result;
   std::uint64_t trades = 0;
   for (std::size_t i = 0; i < cmds.size(); ++i) {
-    std::size_t t = apply(book, cmds[i]);
+    std::size_t t = apply(book, cmds[i], result);
     if (i >= kWarmup) trades += t;
   }
   CHECK(r.trades == trades);

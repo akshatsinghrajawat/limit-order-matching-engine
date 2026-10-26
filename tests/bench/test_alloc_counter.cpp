@@ -81,6 +81,68 @@ static void a_vector_growth_is_counted() {
   CHECK(alloc_snapshot().bytes == s.bytes + 1000 * sizeof(int));
 }
 
+// Sells at 20 consecutive prices, one lot each, so an IOC buy for n lots
+// makes n trades and nothing else: no order rests, no level is created.
+// Every allocation it makes is then the trades vector's.
+static void fill_asks(engine::Book& book) {
+  for (engine::OrderId id = 1; id <= 20; ++id) {
+    book.add_limit_order(id, engine::Side::Sell, 100 + static_cast<engine::Price>(id), 1, 1);
+  }
+}
+
+static std::uint64_t allocs_during(engine::Book& book, engine::Book::AddResult& result, engine::OrderId id) {
+  const AllocSnapshot s = alloc_snapshot();
+  book.add_limit_order(result, id, engine::Side::Buy, 200, 5, 2, engine::TimeInForce::IOC);
+  return alloc_snapshot().calls - s.calls;
+}
+
+static void a_reused_result_stops_allocating_for_trades() {
+  engine::Book book(64);
+  fill_asks(book);
+
+  engine::Book::AddResult result;
+  CHECK(allocs_during(book, result, 101) > 0);  // first sweep grows the vector
+  CHECK(result.trades.size() == 5);
+  CHECK(allocs_during(book, result, 102) == 0);
+  CHECK(result.trades.size() == 5);
+  CHECK(allocs_during(book, result, 103) == 0);
+
+  // The by-value form hands back a result that starts empty every time,
+  // so it pays for the vector on every command that trades.
+  const AllocSnapshot s = alloc_snapshot();
+  engine::Book::AddResult fresh = book.add_limit_order(104, engine::Side::Buy, 200, 5, 2, engine::TimeInForce::IOC);
+  CHECK(fresh.trades.size() == 5);
+  CHECK(alloc_snapshot().calls > s.calls);
+}
+
+static void reset_leaves_nothing_from_the_previous_command() {
+  engine::Book book(64);
+  fill_asks(book);
+
+  engine::Book::AddResult result;
+  book.add_limit_order(result, 101, engine::Side::Buy, 200, 5, 2, engine::TimeInForce::IOC);
+  CHECK(result.accepted && result.trades.size() == 5);
+
+  // Rejected for qty 0: nothing from the sweep above may survive.
+  book.add_limit_order(result, 102, engine::Side::Buy, 200, 0, 2);
+  CHECK(!result.accepted && result.trades.empty() && result.resting_qty == 0);
+
+  // Duplicate id of a resting order.
+  book.add_limit_order(result, 103, engine::Side::Buy, 50, 3, 2);
+  CHECK(result.accepted && result.resting_qty == 3);
+  book.add_limit_order(result, 103, engine::Side::Buy, 50, 3, 2);
+  CHECK(!result.accepted && result.trades.empty() && result.resting_qty == 0);
+
+  // A market order after a sweep, and a sweep that is stopped by a self-match.
+  book.add_market_order(result, 104, engine::Side::Buy, 2, 2);
+  CHECK(result.accepted && result.trades.size() == 2 && result.resting_qty == 0);
+  book.add_limit_order(result, 105, engine::Side::Sell, 90, 1, 3);
+  book.add_limit_order(result, 106, engine::Side::Buy, 95, 1, 3);
+  CHECK(result.stp_rejected && result.trades.empty());
+  book.add_limit_order(result, 107, engine::Side::Buy, 1, 1, 4);
+  CHECK(!result.stp_rejected && result.trades.empty() && result.resting_qty == 1);
+}
+
 constexpr std::size_t kWarmup = 5000;
 constexpr std::size_t kMeasured = 30000;
 
@@ -102,9 +164,10 @@ static void attribution_adds_up(const std::vector<Cmd>& cmds, const AllocProfile
 
 static void trade_split_matches_an_untimed_replay(const std::vector<Cmd>& cmds, const AllocProfile& p) {
   engine::Book book(kBookCapacity);
+  engine::Book::AddResult result;
   std::size_t traded = 0, rested_only = 0;
   for (std::size_t i = 0; i < cmds.size(); ++i) {
-    const std::size_t trades = apply(book, cmds[i]);
+    const std::size_t trades = apply(book, cmds[i], result);
     if (i < kWarmup || cmds[i].kind == CmdKind::Cancel) continue;
     (trades == 0 ? rested_only : traded)++;
   }
@@ -161,6 +224,8 @@ int main() {
   counts_each_form_once();
   frees_and_snapshots_are_not_counted();
   a_vector_growth_is_counted();
+  a_reused_result_stops_allocating_for_trades();
+  reset_leaves_nothing_from_the_previous_command();
 
   const std::vector<Cmd> cmds = generate(W1Params{}, 1, kWarmup + kMeasured);
   const AllocProfile p = profile_allocs(cmds, kWarmup);

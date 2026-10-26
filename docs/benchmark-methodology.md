@@ -259,7 +259,10 @@ operations after 100,000 of warmup.
 
 The engine at this point is the first correct version: `std::map` price
 levels and an `std::unordered_map` id lookup, with no allocation work done. It is where the
-optimization campaign starts from, not a result to quote on its own. A second
+optimization campaign starts from, not a result to quote on its own. The runner at
+this point called the by-value form of `add_limit_order`; from the commit
+that added ADR-008 it keeps one `AddResult` for a pass, so a run after that
+commit differs from this baseline in the harness as well as the engine. A second
 full run on the same setup agreed on throughput to 0.07% (4.65 million
 operations per second in both) and on p50 and p99 within 1.5%, so a change
 smaller than that isn't distinguishable from run-to-run variation. The

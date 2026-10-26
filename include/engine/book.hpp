@@ -52,6 +52,16 @@ class Book {
         // contract; see test 19. Any crossing already executed before this
         // point stands (S8: a command that's run can't be unwound) -- this
         // only means the leftover residual is dropped instead of resting.
+
+    // Clears for reuse. trades keeps its capacity, which is what lets a
+    // caller that reuses one result stop allocating for trades (ADR-008).
+    void reset() {
+      accepted = false;
+      trades.clear();
+      resting_qty = 0;
+      stp_rejected = false;
+      pool_exhausted = false;
+    }
   };
 
   // S5. tif defaults to GTC (rests any residual). IOC/FOK never rest --
@@ -69,11 +79,11 @@ class Book {
   // shared-walk agreement are what make the atomicity claim actually true,
   // not just asserted (test 14b exercises the disagreement this would
   // cause if the pre-check ignored STP).
-  AddResult add_limit_order(OrderId order_id, Side side, Price price, Qty qty,
-                             std::uint32_t account,
-                             TimeInForce tif = TimeInForce::GTC) {
-    AddResult result;
-    if (qty == 0 || id_map_.count(order_id) != 0) return result;
+  void add_limit_order(AddResult& result, OrderId order_id, Side side, Price price, Qty qty,
+                        std::uint32_t account,
+                        TimeInForce tif = TimeInForce::GTC) {
+    result.reset();
+    if (qty == 0 || id_map_.count(order_id) != 0) return;
 
     if (tif == TimeInForce::FOK) {
       Qty available = (side == Side::Buy)
@@ -83,7 +93,7 @@ class Book {
                 [](Price resting, Price taker) { return resting >= taker; });
       if (available < qty) {
         result.accepted = true;  // valid, well-formed order -- rejected on
-        return result;           // liquidity grounds, book untouched (S5)
+        return;                  // liquidity grounds, book untouched (S5)
       }
     }
 
@@ -111,6 +121,13 @@ class Book {
         result.pool_exhausted = true;  // resting_qty stays 0 -- dropped,
       }                                 // not corrupted into the book
     }
+  }
+
+  AddResult add_limit_order(OrderId order_id, Side side, Price price, Qty qty,
+                             std::uint32_t account,
+                             TimeInForce tif = TimeInForce::GTC) {
+    AddResult result;
+    add_limit_order(result, order_id, side, price, qty, account, tif);
     return result;
   }
 
@@ -120,10 +137,10 @@ class Book {
   // simply not rested, same as IOC. STP still applies -- a self-match still
   // stops the sweep and whatever's left goes unfilled rather than crossing
   // through it (S3 makes no TIF exception).
-  AddResult add_market_order(OrderId order_id, Side side, Qty qty,
-                              std::uint32_t account) {
-    AddResult result;
-    if (qty == 0 || id_map_.count(order_id) != 0) return result;
+  void add_market_order(AddResult& result, OrderId order_id, Side side, Qty qty,
+                         std::uint32_t account) {
+    result.reset();
+    if (qty == 0 || id_map_.count(order_id) != 0) return;
 
     Order incoming{};
     incoming.order_id = order_id;
@@ -141,6 +158,12 @@ class Book {
 
     result.accepted = true;
     result.resting_qty = 0;  // market orders never rest -- S5
+  }
+
+  AddResult add_market_order(OrderId order_id, Side side, Qty qty,
+                              std::uint32_t account) {
+    AddResult result;
+    add_market_order(result, order_id, side, qty, account);
     return result;
   }
 

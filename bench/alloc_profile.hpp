@@ -43,13 +43,14 @@ struct AllocProfile {
 
 inline AllocProfile profile_allocs(const std::vector<Cmd>& cmds, std::size_t warmup) {
   engine::Book book(kBookCapacity);
-  for (std::size_t i = 0; i < warmup; ++i) apply(book, cmds[i]);
+  engine::Book::AddResult result;
+  for (std::size_t i = 0; i < warmup; ++i) apply(book, cmds[i], result);
 
   AllocProfile p;
   const AllocSnapshot region_start = alloc_snapshot();
   for (std::size_t i = warmup; i < cmds.size(); ++i) {
     const AllocSnapshot before = alloc_snapshot();
-    const std::size_t trades = apply(book, cmds[i]);
+    const std::size_t trades = apply(book, cmds[i], result);
     const AllocSnapshot after = alloc_snapshot();
 
     AllocStats& s = cmds[i].kind == CmdKind::Cancel ? p.cancel : (trades == 0 ? p.limit_no_trade : p.limit_trades);

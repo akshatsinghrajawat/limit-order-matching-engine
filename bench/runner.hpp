@@ -90,13 +90,16 @@ inline LatencyStats stats_from(std::vector<std::uint64_t>& ticks, const TscClock
   return s;
 }
 
-// Returns the number of trades the command produced.
-inline std::size_t apply(engine::Book& book, const Cmd& c) {
+// Returns the number of trades the command produced. The caller keeps one
+// result for a whole pass, which is how the book is meant to be driven
+// (ADR-008): a fresh result per command would allocate for its trades.
+inline std::size_t apply(engine::Book& book, const Cmd& c, engine::Book::AddResult& result) {
   if (c.kind == CmdKind::Cancel) {
     book.cancel_order(c.id);
     return 0;
   }
-  return book.add_limit_order(c.id, c.side, c.price, c.qty, c.account).trades.size();
+  book.add_limit_order(result, c.id, c.side, c.price, c.qty, c.account);
+  return result.trades.size();
 }
 
 // cmds[0, warmup) warm the book and the caches and are not measured.
@@ -107,9 +110,10 @@ inline RunResult run(const std::vector<Cmd>& cmds, std::size_t warmup, const Tsc
   std::uint64_t whole_trades = 0;
   {
     engine::Book book(kBookCapacity);
-    for (std::size_t i = 0; i < warmup; ++i) apply(book, cmds[i]);
+    engine::Book::AddResult result;
+    for (std::size_t i = 0; i < warmup; ++i) apply(book, cmds[i], result);
     const std::uint64_t start = tsc_now();
-    for (std::size_t i = warmup; i < cmds.size(); ++i) whole_trades += apply(book, cmds[i]);
+    for (std::size_t i = warmup; i < cmds.size(); ++i) whole_trades += apply(book, cmds[i], result);
     const std::uint64_t end = tsc_now();
     r.ops_per_sec = static_cast<double>(measured) / (clock.to_ns(end - start) / 1e9);
   }
@@ -120,10 +124,11 @@ inline RunResult run(const std::vector<Cmd>& cmds, std::size_t warmup, const Tsc
   cancel_ticks.reserve(n.cancel);
   {
     engine::Book book(kBookCapacity);
-    for (std::size_t i = 0; i < warmup; ++i) apply(book, cmds[i]);
+    engine::Book::AddResult result;
+    for (std::size_t i = 0; i < warmup; ++i) apply(book, cmds[i], result);
     for (std::size_t i = warmup; i < cmds.size(); ++i) {
       const std::uint64_t start = tsc_now();
-      r.trades += apply(book, cmds[i]);
+      r.trades += apply(book, cmds[i], result);
       const std::uint64_t end = tsc_now();
       (cmds[i].kind == CmdKind::Cancel ? cancel_ticks : limit_ticks).push_back(end - start);
     }
