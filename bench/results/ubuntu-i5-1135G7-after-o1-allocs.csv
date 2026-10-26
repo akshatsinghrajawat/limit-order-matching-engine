@@ -1,0 +1,22 @@
+# cpu_model: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz
+# pinned_cpu: not pinned
+# governor: powersave
+# turbo: disabled
+# ram: 15753 MiB
+# kernel: Linux 7.0.0-38-generic
+# compiler: GNU 15.2.0
+# flags: -O3 -DNDEBUG -Wall -Wextra -Wpedantic
+# tsc: invariant, 2.4192 GHz
+# binary_hash: e9b51ccf8a38a40f
+# methodology_version: 1
+# label: ubuntu-i5-1135G7-after-o1
+# workload: W1
+# seed: 1
+# warmup_ops: 100000
+# measured_ops: 1000000
+# counted: calls to the global operator new
+kind,commands,allocs,allocs_per_command,max_per_command,bytes
+limit_no_trade,488236,797509,1.633,2,29036952
+limit_trades,207986,34006,0.164,2,1360240
+cancel,303778,0,0.000,0,0
+all,1000000,831515,0.832,2,30397192
