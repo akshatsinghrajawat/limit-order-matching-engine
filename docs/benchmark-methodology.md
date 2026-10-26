@@ -130,6 +130,31 @@ The three files are committed together under the methodology version they
 state. A W1 file without the noise and overhead files next to it from the
 same run isn't a published result.
 
+## Allocation count
+
+`bench_allocs <label> [seed] [measured_ops]` replays W1 and counts calls to
+the global `operator new` for each command, split into limit orders that
+trade, limit orders that only rest, and cancels. The counting is
+`bench/alloc_counter.cpp`, which replaces the global `new` and `delete` in
+the programs that link the `alloc_counter` library and in no others. Frees
+aren't counted, only allocations.
+
+The counts don't depend on timing, so this needs no pinned core, governor or
+quiet machine, and they come out the same with sanitizers on or off. Use the
+seed and operation count of the W1 baseline so both files describe the same
+stream. The 100,000 warmup commands run first and aren't counted.
+
+The results file has the environment block, the same `# key: value` lines as
+a W1 file, and one row per kind: commands, allocations, allocations per
+command, the most any single command made, and bytes requested. The `all`
+row is counted around the whole measured region, not added up from the
+others, and the unit test checks that the two agree.
+
+Only `operator new` is seen. An allocation made some other way, with `malloc`
+directly or inside a library that doesn't call `new`, wouldn't show up.
+This is the measurement the zero-allocation test (test 25) will assert on
+once the optimizations that can make it pass are in.
+
 ## Workloads (versioned: W1, W2, ...)
 
 - **W1 (baseline)**: 10,000-tick price span, average book depth ~1,000

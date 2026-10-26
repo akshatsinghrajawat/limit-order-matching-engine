@@ -85,6 +85,16 @@ if(BUILD_TESTS)
   target_link_libraries(test_overhead PRIVATE bench_support)
   add_test(NAME bench_overhead_pieces COMMAND test_overhead)
 
+  # Replaces the global operator new with a counting one. Kept as its own
+  # library so only the programs that measure allocations get it; linking it
+  # anywhere else would change what their allocations cost.
+  add_library(alloc_counter STATIC bench/alloc_counter.cpp)
+  target_include_directories(alloc_counter PUBLIC bench)
+
+  add_executable(test_alloc_counter tests/bench/test_alloc_counter.cpp)
+  target_link_libraries(test_alloc_counter PRIVATE bench_support alloc_counter)
+  add_test(NAME bench_alloc_counter COMMAND test_alloc_counter)
+
   # Not tests, run them by hand. See the usage comment in each source for
   # the build they need to produce numbers worth keeping.
   add_executable(bench_w1 bench/bench_w1.cpp)
@@ -95,4 +105,7 @@ if(BUILD_TESTS)
 
   add_executable(bench_overhead bench/bench_overhead.cpp)
   target_link_libraries(bench_overhead PRIVATE bench_support)
+
+  add_executable(bench_allocs bench/bench_allocs.cpp)
+  target_link_libraries(bench_allocs PRIVATE bench_support alloc_counter)
 endif()
