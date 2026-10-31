@@ -101,6 +101,10 @@ if(BUILD_TESTS)
   target_link_libraries(test_id_map PRIVATE test_support alloc_counter)
   add_test(NAME unit_id_map COMMAND test_id_map)
 
+  add_executable(test_price_levels tests/unit/test_price_levels.cpp)
+  target_link_libraries(test_price_levels PRIVATE test_support alloc_counter)
+  add_test(NAME unit_price_levels COMMAND test_price_levels)
+
   # Not tests, run them by hand. See the usage comment in each source for
   # the build they need to produce numbers worth keeping.
   add_executable(bench_w1 bench/bench_w1.cpp)

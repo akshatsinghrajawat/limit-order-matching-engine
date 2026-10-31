@@ -3,12 +3,12 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <map>
 #include <vector>
 
 #include "id_map.hpp"
 #include "level.hpp"
 #include "pool.hpp"
+#include "price_levels.hpp"
 #include "types.hpp"
 
 namespace engine {
@@ -22,10 +22,9 @@ struct Trade {
   SeqNo seq_no;
 };
 
-// Book owns the order pool, the two price-level containers (ADR-003's
-// std::map baseline -- correctness first, not yet the campaign's flat
-// array/page-table replacement), and the order_id -> handle map used for
-// cancel (ADR-005).
+// Book owns the order pool, the two price-level containers (ADR-003: one
+// sorted array per side, best level last), and the order_id -> handle map
+// used for cancel (ADR-005).
 //
 // Scope: limit orders (GTC/IOC/FOK) and market orders -- insert, cross,
 // partial fill, cancel, modify (S2), self-trade prevention (S3), S5's
@@ -33,7 +32,13 @@ struct Trade {
 // fuzzer (M2), journal/replay (M3+).
 class Book {
  public:
-  explicit Book(Index capacity) : pool_(capacity), id_map_(capacity) {}
+  // Each side gets room for one level more than the pool has orders, because
+  // rest() creates a level before it learns the pool is full.
+  explicit Book(Index capacity)
+      : pool_(capacity),
+        bids_(static_cast<std::size_t>(capacity) + 1),
+        asks_(static_cast<std::size_t>(capacity) + 1),
+        id_map_(capacity) {}
 
   // S3: reject the incoming aggressive quantity when it would self-match
   // (same account); the resting order is untouched. "Reject the quantity,"
@@ -237,8 +242,8 @@ class Book {
 
   bool has_bid() const { return !bids_.empty(); }
   bool has_ask() const { return !asks_.empty(); }
-  Price best_bid() const { return bids_.begin()->first; }
-  Price best_ask() const { return asks_.begin()->first; }
+  Price best_bid() const { return bids_.best().price; }
+  Price best_ask() const { return asks_.best().price; }
 
   // Exposed for tests that need to walk a level's FIFO order directly --
   // not part of the engine's own matching logic.
@@ -257,7 +262,7 @@ class Book {
   };
 
   // Every resting order in a fixed order: bids best-first, then asks
-  // best-first, FIFO within a level. Walks the price maps and level lists
+  // best-first, FIFO within a level. Walks the price levels and level lists
   // only, never id_map_, so the output can't depend on hash iteration
   // order (S7). Allocates -- for tests and the M2 differential harness,
   // not for anything on the matching path.
@@ -285,14 +290,18 @@ class Book {
   }
 
  private:
-  using BidLevels = std::map<Price, Level, std::greater<Price>>;  // best = begin()
-  using AskLevels = std::map<Price, Level, std::less<Price>>;     // best = begin()
+  using BidLevels = PriceLevels<Best::High>;
+  using AskLevels = PriceLevels<Best::Low>;
 
-  template <typename PriceMap>
-  const char* check_side(const PriceMap& levels, Side side, std::size_t& linked) const {
-    for (const auto& [price, level] : levels) {
-      if (level.head == kNilIndex) return "empty level left in price map";
-      if (level.price != price) return "level.price != map key";
+  template <typename Levels>
+  const char* check_side(const Levels& levels, Side side, std::size_t& linked) const {
+    for (std::size_t rank = 0; rank < levels.size(); ++rank) {
+      const Level& level = levels.by_rank(rank);
+      const Price price = level.price;
+      if (rank > 0 && !Levels::better(levels.by_rank(rank - 1).price, price)) {
+        return "price levels not strictly ordered best first";
+      }
+      if (level.head == kNilIndex) return "empty level left in price levels";
       Index prev = kNilIndex;
       SeqNo last_seq = 0;
       for (Index idx = level.head; idx != kNilIndex; idx = pool_.unchecked(idx).next_idx) {
@@ -316,10 +325,10 @@ class Book {
     return nullptr;
   }
 
-  template <typename PriceMap>
-  void append_side(const PriceMap& side, std::vector<RestingOrder>& out) const {
-    for (const auto& [price, level] : side) {
-      for (Index idx = level.head; idx != kNilIndex;) {
+  template <typename Levels>
+  void append_side(const Levels& side, std::vector<RestingOrder>& out) const {
+    for (std::size_t rank = 0; rank < side.size(); ++rank) {
+      for (Index idx = side.by_rank(rank).head; idx != kNilIndex;) {
         const Order& o = pool_.unchecked(idx);
         out.push_back({o.side, o.price, o.order_id, o.qty, o.account, o.seq_no});
         idx = o.next_idx;
@@ -329,13 +338,12 @@ class Book {
 
   // Returns true iff a self-match stopped the sweep before `incoming` was
   // exhausted -- the caller must not rest the residual in that case (S3).
-  template <typename PriceMap, typename Crosses>
-  bool cross(PriceMap& resting_side, Order& incoming,
+  template <typename Levels, typename Crosses>
+  bool cross(Levels& resting_side, Order& incoming,
              std::vector<Trade>& trades, Crosses crosses) {
     while (incoming.qty > 0 && !resting_side.empty()) {
-      auto level_it = resting_side.begin();
-      if (!crosses(level_it->first, incoming.price)) break;
-      Level& level = level_it->second;
+      Level& level = resting_side.best();
+      if (!crosses(level.price, incoming.price)) break;
 
       while (incoming.qty > 0 && level.head != kNilIndex) {
         Index maker_idx = level.head;
@@ -360,7 +368,7 @@ class Book {
         // it already has the earliest seq_no there, nothing to relink.
       }
 
-      if (level.head == kNilIndex) resting_side.erase(level_it);
+      if (level.head == kNilIndex) resting_side.pop_best();
     }
     return false;
   }
@@ -373,12 +381,13 @@ class Book {
   // stops the sweep, that order is never touched" rule). Read-only: no
   // trades, no mutation, nothing to unwind if the caller decides to
   // reject.
-  template <typename PriceMap, typename Crosses>
-  Qty available_before_self_trade(const PriceMap& resting_side, Price limit_price,
+  template <typename Levels, typename Crosses>
+  Qty available_before_self_trade(const Levels& resting_side, Price limit_price,
                                    std::uint32_t account, Crosses crosses) const {
     Qty total = 0;
-    for (const auto& [level_price, level] : resting_side) {
-      if (!crosses(level_price, limit_price)) break;
+    for (std::size_t rank = 0; rank < resting_side.size(); ++rank) {
+      const Level& level = resting_side.by_rank(rank);
+      if (!crosses(level.price, limit_price)) break;
       Index idx = level.head;
       while (idx != kNilIndex) {
         const Order& order = pool_.unchecked(idx);
@@ -399,7 +408,7 @@ class Book {
   // book shouldn't consume a sequence number. level_for_insert() may have
   // just created a fresh empty Level for a price with no prior resting
   // orders -- clean that up on the failure path so a full pool doesn't
-  // also leak empty levels into the price-level maps.
+  // also leak empty levels into the price levels.
   bool rest(Side side, Price price, Order& incoming) {
     Level& level = level_for_insert(side, price);
     Handle h = pool_.allocate(incoming);
@@ -414,14 +423,7 @@ class Book {
   }
 
   Level& level_for_insert(Side side, Price price) {
-    if (side == Side::Buy) {
-      auto [it, inserted] = bids_.try_emplace(price);
-      if (inserted) it->second.price = price;
-      return it->second;
-    }
-    auto [it, inserted] = asks_.try_emplace(price);
-    if (inserted) it->second.price = price;
-    return it->second;
+    return side == Side::Buy ? bids_.get_or_insert(price) : asks_.get_or_insert(price);
   }
 
   Level& level_for(Side side, Price price) {

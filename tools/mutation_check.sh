@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Checks that the test suite notices when include/engine/book.hpp or
-# include/engine/id_map.hpp is wrong.
+# Checks that the test suite notices when include/engine/book.hpp,
+# include/engine/id_map.hpp or include/engine/price_levels.hpp is wrong.
 #
 # Each mutant below makes one small change to a copy of one header, rebuilds,
 # and runs ctest. A mutant is killed if the build succeeds and some test
@@ -213,6 +213,44 @@ check idmap-no-backward-shift 1 \
 check idmap-shift-skips-home-slot 1 \
   '>= ((i - hole) & mask_)) {' \
   '> ((i - hole) & mask_)) {'
+
+# The price levels (ADR-003). A mutant that would make the matching loop spin
+# forever, such as one that stops pop_best() from shrinking the array, is
+# left out on purpose: it would only be "killed" by the test timeout.
+use_target include/engine/price_levels.hpp
+check levels-better-inverted 1 \
+  'return B == Best::High ? a > b : a < b;' \
+  'return B == Best::High ? a < b : a > b;'
+check levels-best-is-first 1 \
+  'return levels_[count_ - 1];' \
+  'return levels_[0];'
+check levels-rank-off-by-one 1 \
+  'return levels_[count_ - 1 - rank];' \
+  'return levels_[count_ - rank];'
+check levels-search-reversed 1 \
+  '[](const Level& l, Price p) { return better(p, l.price); });' \
+  '[](const Level& l, Price p) { return better(l.price, p); });'
+check levels-find-ignores-price 1 \
+  'return at != end() && at->price == price ? at : nullptr;' \
+  'return at != end() ? at : nullptr;'
+check levels-duplicate-level 1 \
+  'if (at != end() && at->price == price) return *at;' \
+  'if (false) return *at;'
+check levels-insert-does-not-shift 1 \
+  'std::copy_backward(at, end(), end() + 1);' \
+  ';'
+check levels-insert-not-counted 1 \
+  '++count_;' \
+  ';'
+check levels-new-level-not-empty 1 \
+  '*at = Level{price, kNilIndex, kNilIndex};' \
+  '*at = Level{price, 0, 0};'
+check levels-erase-does-not-shift 1 \
+  'std::copy(at + 1, end(), at);' \
+  ';'
+check levels-erase-not-counted 2 \
+  '--count_;' \
+  ';'
 
 echo
 killed=$((total - ${#survivors[@]}))
