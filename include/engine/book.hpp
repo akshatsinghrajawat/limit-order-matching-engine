@@ -4,9 +4,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <map>
-#include <unordered_map>
 #include <vector>
 
+#include "id_map.hpp"
 #include "level.hpp"
 #include "pool.hpp"
 #include "types.hpp"
@@ -33,7 +33,7 @@ struct Trade {
 // fuzzer (M2), journal/replay (M3+).
 class Book {
  public:
-  explicit Book(Index capacity) : pool_(capacity) {}
+  explicit Book(Index capacity) : pool_(capacity), id_map_(capacity) {}
 
   // S3: reject the incoming aggressive quantity when it would self-match
   // (same account); the resting order is untouched. "Reject the quantity,"
@@ -83,7 +83,7 @@ class Book {
                         std::uint32_t account,
                         TimeInForce tif = TimeInForce::GTC) {
     result.reset();
-    if (qty == 0 || id_map_.count(order_id) != 0) return;
+    if (qty == 0 || id_map_.contains(order_id)) return;
 
     if (tif == TimeInForce::FOK) {
       Qty available = (side == Side::Buy)
@@ -140,7 +140,7 @@ class Book {
   void add_market_order(AddResult& result, OrderId order_id, Side side, Qty qty,
                          std::uint32_t account) {
     result.reset();
-    if (qty == 0 || id_map_.count(order_id) != 0) return;
+    if (qty == 0 || id_map_.contains(order_id)) return;
 
     Order incoming{};
     incoming.order_id = order_id;
@@ -180,13 +180,13 @@ class Book {
   bool modify_order(OrderId order_id, Price new_price, Qty new_qty) {
     if (new_qty == 0) return false;
 
-    auto it = id_map_.find(order_id);
-    if (it == id_map_.end()) return false;
+    const Handle* found = id_map_.find(order_id);
+    if (found == nullptr) return false;
 
-    Handle h = it->second;
+    Handle h = *found;
     Order* order = pool_.get(h);
     if (order == nullptr) {  // see cancel_order's identical guard
-      id_map_.erase(it);
+      id_map_.erase(order_id);
       return false;
     }
 
@@ -217,13 +217,13 @@ class Book {
   // False covers both "never existed" and "already cancelled/filled" --
   // S1/test-8 deliberately don't distinguish those at this layer.
   bool cancel_order(OrderId order_id) {
-    auto it = id_map_.find(order_id);
-    if (it == id_map_.end()) return false;
+    const Handle* found = id_map_.find(order_id);
+    if (found == nullptr) return false;
 
-    Handle h = it->second;
+    Handle h = *found;
     Order* order = pool_.get(h);
-    if (order == nullptr) {  // stale handle -- shouldn't happen if id_map_
-      id_map_.erase(it);     // stays in sync, but don't trust that blindly
+    if (order == nullptr) {    // stale handle -- shouldn't happen if id_map_
+      id_map_.erase(order_id);  // stays in sync, but don't trust that blindly
       return false;
     }
 
@@ -231,7 +231,7 @@ class Book {
     level_unlink(level, pool_, h.index());
     if (level.head == kNilIndex) erase_level(order->side, order->price);
     pool_.free(h);
-    id_map_.erase(it);
+    id_map_.erase(order_id);
     return true;
   }
 
@@ -303,8 +303,8 @@ class Book {
         if (o.price != price) return "order price != level price";
         if (o.qty == 0) return "resting order with qty 0";
         if (prev != kNilIndex && o.seq_no <= last_seq) return "seq_no not increasing within level";
-        auto it = id_map_.find(o.order_id);
-        if (it == id_map_.end() || it->second.index() != idx || !pool_.validate(it->second)) {
+        const Handle* mapped = id_map_.find(o.order_id);
+        if (mapped == nullptr || mapped->index() != idx || !pool_.validate(*mapped)) {
           return "id_map_ entry missing or pointing at another slot";
         }
         if (++linked > pool_.capacity()) return "cycle in level list";
@@ -409,7 +409,7 @@ class Book {
     }
     pool_.get(h)->seq_no = next_seq_++;  // S6: assigned by the core, on accept
     level_append(level, pool_, h.index());
-    id_map_[incoming.order_id] = h;
+    id_map_.insert(incoming.order_id, h);
     return true;
   }
 
@@ -435,7 +435,7 @@ class Book {
   FixedPool<Order> pool_;
   BidLevels bids_;
   AskLevels asks_;
-  std::unordered_map<OrderId, Handle> id_map_;
+  IdMap id_map_;
   SeqNo next_seq_ = 0;
   std::uint64_t next_trade_id_ = 0;
 };

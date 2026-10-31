@@ -95,6 +95,12 @@ if(BUILD_TESTS)
   target_link_libraries(test_alloc_counter PRIVATE bench_support alloc_counter)
   add_test(NAME bench_alloc_counter COMMAND test_alloc_counter)
 
+  # Links alloc_counter because one of its checks is that the map never
+  # allocates after construction.
+  add_executable(test_id_map tests/unit/test_id_map.cpp)
+  target_link_libraries(test_id_map PRIVATE test_support alloc_counter)
+  add_test(NAME unit_id_map COMMAND test_id_map)
+
   # Not tests, run them by hand. See the usage comment in each source for
   # the build they need to produce numbers worth keeping.
   add_executable(bench_w1 bench/bench_w1.cpp)

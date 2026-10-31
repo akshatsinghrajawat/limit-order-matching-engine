@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Checks that the test suite notices when include/engine/book.hpp is wrong.
+# Checks that the test suite notices when include/engine/book.hpp or
+# include/engine/id_map.hpp is wrong.
 #
-# Each mutant below makes one small change to a copy of book.hpp, rebuilds,
+# Each mutant below makes one small change to a copy of one header, rebuilds,
 # and runs ctest. A mutant is killed if the build succeeds and some test
 # fails. A survivor means either a gap in the tests or an equivalent
 # mutant; both need a look. The working tree is never modified.
@@ -21,12 +22,18 @@ trap 'rm -rf "$work"' EXIT
 
 src=$work/src
 build=$work/build
-header=include/engine/book.hpp
-pristine=$work/book.hpp.orig
 
 mkdir "$src"
 cp -r "$root/include" "$root/tests" "$root/bench" "$root/CMakeLists.txt" "$src/"
-cp "$src/$header" "$pristine"
+
+# Selects the header the following mutants apply to. mutate() reads the
+# untouched copy and writes the mutated one into the source tree.
+use_target() {
+  header=$1
+  pristine=$work/$(basename "$1").orig
+  [ -e "$pristine" ] || cp "$src/$header" "$pristine"
+}
+use_target include/engine/book.hpp
 
 cmake -S "$src" -B "$build" -DCMAKE_BUILD_TYPE=Debug \
   -DENABLE_SANITIZERS="${ENABLE_SANITIZERS:-ON}" > "$work/configure.log" 2>&1 || {
@@ -41,7 +48,7 @@ run_suite() {
     echo BUILD_FAILED
     return
   fi
-  if ctest --test-dir "$build" --timeout 300 > "$work/ctest.log" 2>&1; then
+  if ctest --test-dir "$build" --timeout 120 > "$work/ctest.log" 2>&1; then
     return
   fi
   local names
@@ -97,6 +104,7 @@ check() {
   fi
   local failed
   failed=$(run_suite)
+  cp "$pristine" "$src/$header"
   if [ "$failed" = BUILD_FAILED ]; then
     printf '  %-34s DOES NOT COMPILE\n' "$name"
     broken=1
@@ -142,7 +150,7 @@ check market-never-crosses 1 \
   '[](Price, Price) { return true; }' \
   '[](Price, Price) { return false; }'
 check duplicate-id-accepted 1 \
-  'if (qty == 0 || id_map_.count(order_id) != 0) return;' \
+  'if (qty == 0 || id_map_.contains(order_id)) return;' \
   'if (qty == 0) return;'
 
 # S2/S6: modify and priority
@@ -172,12 +180,45 @@ check fill-leaves-id-map-entry 1 \
 check rest-failure-leaks-level 1 \
   'if (level.head == kNilIndex) erase_level(side, price);' \
   ';'
+check cancel-leaves-id-map-entry 3 \
+  'id_map_.erase(order_id);' \
+  ';'
+
+# The order id lookup (ADR-005)
+use_target include/engine/id_map.hpp
+check idmap-table-too-small 1 \
+  'while (slots < 2 * static_cast<std::size_t>(max_entries)) slots *= 2;' \
+  'while (slots < static_cast<std::size_t>(max_entries)) slots *= 2;'
+check idmap-find-ignores-key 1 \
+  'if (e.id == id) return &e.handle;' \
+  'return &e.handle;'
+check idmap-contains-inverted 1 \
+  'return find(id) != nullptr;' \
+  'return find(id) == nullptr;'
+check idmap-insert-does-not-wrap 1 \
+  'while (table_[i].handle.valid()) i = (i + 1) & mask_;' \
+  'while (table_[i].handle.valid()) i = i + 1;'
+check idmap-insert-not-counted 1 \
+  '++size_;' \
+  ';'
+check idmap-erase-not-counted 1 \
+  '--size_;' \
+  ';'
+check idmap-erase-keeps-entry 1 \
+  'table_[hole].handle = Handle{};' \
+  ';'
+check idmap-no-backward-shift 1 \
+  'if (((i - home(table_[i].id)) & mask_) >= ((i - hole) & mask_)) {' \
+  'if (false) {'
+check idmap-shift-skips-home-slot 1 \
+  '>= ((i - hole) & mask_)) {' \
+  '> ((i - hole) & mask_)) {'
 
 echo
 killed=$((total - ${#survivors[@]}))
 echo "$killed/$total killed"
 if [ "$broken" -ne 0 ]; then
-  echo "some mutants could not be applied or built; book.hpp has drifted from this list"
+  echo "some mutants could not be applied or built; a header has drifted from this list"
   exit 2
 fi
 if [ ${#survivors[@]} -ne 0 ]; then
