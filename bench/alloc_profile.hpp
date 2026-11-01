@@ -2,7 +2,7 @@
 
 // Counts the allocations the engine makes while it runs W1, and attributes
 // them to the kind of command that made them. The first half of what test 25
-// will assert: this reports, test 25 will require zero.
+// asserts: this reports, test 25 requires zero.
 //
 // Only calls to the global operator new are counted, which is every
 // allocation the engine makes through std containers. The profile is

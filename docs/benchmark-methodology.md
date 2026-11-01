@@ -152,8 +152,14 @@ others, and the unit test checks that the two agree.
 
 Only `operator new` is seen. An allocation made some other way, with `malloc`
 directly or inside a library that doesn't call `new`, wouldn't show up.
-This is the measurement the zero-allocation test (test 25) will assert on
-once the optimizations that can make it pass are in.
+This is the measurement the zero-allocation test (test 25,
+`tests/bench/test_zero_alloc.cpp`) asserts on: zero calls over the measured
+part of W1 for three seeds. W1 only issues GTC limit orders and cancels, so
+the test also drives a second stream through a pool of 8 that covers IOC,
+FOK, market and modify orders, self-trade rejections, duplicate ids and a
+full pool, and requires zero there too. The commands that stream sends
+through a reused `AddResult` are the ones that can be allocation free (the
+by-value forms allocate for their trades, ADR-008).
 
 ## Workloads (versioned: W1, W2, ...)
 

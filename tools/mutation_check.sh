@@ -184,6 +184,12 @@ check cancel-leaves-id-map-entry 3 \
   'id_map_.erase(order_id);' \
   ';'
 
+# Zero allocation (test 25): a result that gives its trade storage back
+# makes every command that trades allocate on its next one.
+check result-reset-drops-capacity 1 \
+  'trades.clear();' \
+  'trades.clear(); trades.shrink_to_fit();'
+
 # The order id lookup (ADR-005)
 use_target include/engine/id_map.hpp
 check idmap-table-too-small 1 \

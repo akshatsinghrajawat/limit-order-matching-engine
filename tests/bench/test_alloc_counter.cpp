@@ -1,7 +1,7 @@
 // Checks the allocation counter on allocations it can predict, and that the
 // per-command attribution adds up on a short W1 stream. It does not pin how
 // many allocations the engine makes: that number is what the optimization
-// work changes, and test 25 is the check that will require zero.
+// work changes, and test 25 (test_zero_alloc.cpp) is the check that requires zero.
 //
 // CHECK instead of assert so a Release build (-DNDEBUG) still verifies.
 #include <cstddef>

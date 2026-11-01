@@ -95,6 +95,10 @@ if(BUILD_TESTS)
   target_link_libraries(test_alloc_counter PRIVATE bench_support alloc_counter)
   add_test(NAME bench_alloc_counter COMMAND test_alloc_counter)
 
+  add_executable(test_zero_alloc tests/bench/test_zero_alloc.cpp)
+  target_link_libraries(test_zero_alloc PRIVATE bench_support alloc_counter)
+  add_test(NAME zero_allocation COMMAND test_zero_alloc)
+
   # Links alloc_counter because one of its checks is that the map never
   # allocates after construction.
   add_executable(test_id_map tests/unit/test_id_map.cpp)

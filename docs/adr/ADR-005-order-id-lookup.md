@@ -65,6 +65,6 @@ had never been inserted.
 
 ## Status
 
-Accepted. O1 (ADR-008) and this change together remove every allocation
-except the price-level nodes. ADR-003's replacement is what is left before
-the zero-allocation test (test 25) can pass.
+Accepted. O1 (ADR-008) and this change together removed every allocation
+except the price-level nodes, and ADR-003's array removed those, which is
+what lets the zero-allocation test (test 25) pass.
