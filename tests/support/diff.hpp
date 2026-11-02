@@ -68,12 +68,13 @@ inline std::string describe(const Op& op) {
 // vacuous (a fuzzer that never self-trades proves nothing about STP).
 struct Stats {
   std::uint64_t ops = 0, trades = 0, stp = 0, fok_rejected = 0, pool_exhausted = 0;
-  std::uint64_t modify_ok = 0, cancel_ok = 0, invalid_rejected = 0, crossed_states = 0;
+  std::uint64_t modify_ok = 0, cancel_ok = 0, invalid_rejected = 0, modify_crossing_rejected = 0;
 
   void add(const Stats& o) {
     ops += o.ops; trades += o.trades; stp += o.stp; fok_rejected += o.fok_rejected;
     pool_exhausted += o.pool_exhausted; modify_ok += o.modify_ok; cancel_ok += o.cancel_ok;
-    invalid_rejected += o.invalid_rejected; crossed_states += o.crossed_states;
+    invalid_rejected += o.invalid_rejected;
+    modify_crossing_rejected += o.modify_crossing_rejected;
   }
 };
 
@@ -110,6 +111,9 @@ class Pair {
         bool b = ref.modify(op.id, op.price, op.qty);
         if (a != b) return flag("modify", a, b);
         stats.modify_ok += a;
+        // A valid modify of a resting order that fails can only have been
+        // refused for crossing.
+        stats.modify_crossing_rejected += !a && op.qty > 0 && ref.has(op.id);
         return {};
       }
     }
@@ -142,7 +146,6 @@ class Pair {
         return buf;
       }
     }
-    if (book.has_bid() && book.has_ask() && book.best_bid() >= book.best_ask()) ++stats.crossed_states;
     return {};
   }
 

@@ -125,11 +125,11 @@ static void modify_priority_rules() {
   CHECK(o.modify(1, 100, 4));
   s = o.snapshot();
   CHECK(s[0].order_id == 2 && s[1].order_id == 3 && s[2].order_id == 1);
-  CHECK(s[2].seq_no == 3);
+  CHECK(s[2].seq_no == 4);
 
   CHECK(o.modify(2, 101, 5));
   s = o.snapshot();
-  CHECK(s[0].order_id == 2 && s[0].price == 101 && s[0].seq_no == 4);
+  CHECK(s[0].order_id == 2 && s[0].price == 101 && s[0].seq_no == 5);
   CHECK(s[1].order_id == 3 && s[2].order_id == 1);
 
   CHECK(o.modify(3, 100, 5));
@@ -138,7 +138,7 @@ static void modify_priority_rules() {
 
   CHECK(o.modify(3, 100, 6));
   s = o.snapshot();
-  CHECK(s[1].order_id == 1 && s[2].order_id == 3 && s[2].seq_no == 5);
+  CHECK(s[1].order_id == 1 && s[2].order_id == 3 && s[2].seq_no == 7);
 }
 
 static void rejections_leave_state_alone() {
@@ -172,36 +172,57 @@ static void capacity_exhaustion_is_a_clean_rejection() {
   CHECK(r.resting_qty == 5 && !r.pool_exhausted);
 }
 
-// The spec puts seq_no in the trade event and never says what it holds. Here
-// it is the next unassigned sequence number at the moment of the fill; trades
-// do not consume one, so it equals the seq_no the next resting order gets.
-// This pins down what the engine does, it is not derived from the spec.
-static void trade_ids_and_sequence_numbers() {
+// ADR-009: every command takes the next seq_no, whether or not it changes
+// anything, and a trade carries the seq_no of the command that caused it.
+static void every_command_takes_a_sequence_number() {
   Oracle o(16);
-  o.add_limit(1, Side::Sell, 100, 1, B, GTC);
-  Result r = o.add_limit(2, Side::Buy, 100, 1, A, IOC);
+  o.add_limit(1, Side::Sell, 100, 1, B, GTC);                   // seq 0
+  Result r = o.add_limit(2, Side::Buy, 100, 1, A, IOC);         // seq 1
   CHECK(r.trades[0].trade_id == 0 && r.trades[0].seq_no == 1);
-  o.add_limit(3, Side::Sell, 100, 1, B, GTC);
-  CHECK(o.snapshot()[0].seq_no == 1);
-  r = o.add_limit(4, Side::Buy, 100, 1, A, IOC);
-  CHECK(r.trades[0].trade_id == 1 && r.trades[0].seq_no == 2);
+  o.add_limit(3, Side::Sell, 100, 1, B, GTC);                   // seq 2
+  CHECK(o.snapshot()[0].seq_no == 2);
+  r = o.add_limit(4, Side::Buy, 100, 1, A, IOC);                // seq 3
+  CHECK(r.trades[0].trade_id == 1 && r.trades[0].seq_no == 3);
+
+  // None of these changes the book, and each still takes a number.
+  CHECK(!o.cancel(99));                                         // seq 4
+  CHECK(!o.modify(99, 100, 1));                                 // seq 5
+  CHECK(!o.add_limit(5, Side::Buy, 100, 0, A, GTC).accepted);   // seq 6
+  o.add_limit(6, Side::Buy, 90, 1, A, GTC);                     // seq 7
+  CHECK(o.snapshot()[0].seq_no == 7);
+
+  // One command's trades share its number.
+  o.add_limit(7, Side::Sell, 100, 1, B, GTC);                   // seq 8
+  o.add_limit(8, Side::Sell, 101, 1, B, GTC);                   // seq 9
+  r = o.add_limit(9, Side::Buy, 101, 2, A, GTC);                // seq 10
+  CHECK(r.trades.size() == 2);
+  CHECK(r.trades[0].seq_no == 10 && r.trades[1].seq_no == 10);
+  CHECK(r.trades[0].trade_id + 1 == r.trades[1].trade_id);
 }
 
-// The spec says modify repositions an order and never says it can trade, so
-// a price move through the opposite side leaves the book crossed, and the
-// next incoming order trades against it at the resting price. Like seq_no
-// above, this pins down the engine's behavior; the spec does not decide it.
-static void modify_never_crosses_but_later_orders_do() {
+// ADR-009: a modify that would trade is refused and leaves the order where
+// it was. Touching the opposite best counts as crossing.
+static void modify_that_would_cross_is_rejected() {
   Oracle o(16);
   o.add_limit(1, Side::Buy, 100, 5, A, GTC);
   o.add_limit(2, Side::Sell, 105, 5, B, GTC);
-  CHECK(o.modify(1, 106, 5));
-  auto s = o.snapshot();
-  CHECK(s.size() == 2 && s[0].price == 106 && s[1].price == 105);
 
-  Result r = o.add_limit(3, Side::Sell, 104, 2, B, GTC);
-  CHECK(r.trades.size() == 1 && r.trades[0].maker_order_id == 1);
-  CHECK(r.trades[0].price == 106 && r.trades[0].qty == 2);
+  CHECK(!o.modify(1, 106, 5));
+  CHECK(!o.modify(1, 105, 5));
+  CHECK(!o.modify(2, 100, 5));
+  auto s = o.snapshot();
+  CHECK(s.size() == 2 && s[0].order_id == 1 && s[0].price == 100 && s[0].seq_no == 0);
+  CHECK(s[1].order_id == 2 && s[1].price == 105 && s[1].seq_no == 1);
+
+  CHECK(o.modify(1, 104, 5));
+  CHECK(o.modify(2, 105, 5));  // already at 105, so only qty-equal: keeps its place
+  CHECK(o.modify(2, 106, 5));
+  s = o.snapshot();
+  CHECK(s[0].price == 104 && s[1].price == 106 && s[1].seq_no == 7);
+
+  // A resting order is never a reason to refuse a change on its own side.
+  o.add_limit(3, Side::Buy, 103, 1, A, GTC);
+  CHECK(o.modify(3, 102, 1));
 }
 
 int main() {
@@ -214,8 +235,8 @@ int main() {
   modify_priority_rules();
   rejections_leave_state_alone();
   capacity_exhaustion_is_a_clean_rejection();
-  trade_ids_and_sequence_numbers();
-  modify_never_crosses_but_later_orders_do();
+  every_command_takes_a_sequence_number();
+  modify_that_would_cross_is_rejected();
   std::printf("oracle self-check: all passed\n");
   return 0;
 }

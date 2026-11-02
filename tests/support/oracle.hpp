@@ -8,10 +8,7 @@
 // resting orders, and every question is answered by scanning it.
 //
 // Do not "fix" a divergence by making this look more like book.hpp. If the
-// two disagree, one of them misreads the spec, and the spec decides. The
-// exceptions are the two points the spec leaves open, what a trade's seq_no
-// holds and whether modify can cross the book: there this follows the
-// engine, as test_oracle.cpp spells out.
+// two disagree, one of them misreads the spec, and the spec decides.
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -69,6 +66,7 @@ class Oracle {
   }
 
   bool cancel(OrderId id) {
+    ++next_seq_;
     std::size_t i = find(id);
     if (i == npos) return false;
     orders_.erase(orders_.begin() + static_cast<std::ptrdiff_t>(i));
@@ -76,9 +74,11 @@ class Oracle {
   }
 
   // S2: only a pure quantity reduction at the same price keeps priority.
-  // Anything else gets a fresh seq_no, which puts it behind every order
-  // already at its (possibly unchanged) price. Never crosses the book.
+  // Anything else takes this command's seq_no, which puts it behind every
+  // order already at its (possibly unchanged) price. A price that would
+  // trade is rejected (ADR-009).
   bool modify(OrderId id, Price new_price, Qty new_qty) {
+    const SeqNo seq = next_seq_++;
     if (new_qty == 0) return false;
     std::size_t i = find(id);
     if (i == npos) return false;
@@ -87,11 +87,14 @@ class Oracle {
       o.qty = new_qty;
       return true;
     }
+    if (best_opposite(o.side, true, new_price) != npos) return false;
     o.price = new_price;
     o.qty = new_qty;
-    o.seq_no = next_seq_++;
+    o.seq_no = seq;
     return true;
   }
+
+  bool has(OrderId id) const { return find(id) != npos; }
 
   // Bids best-first then asks best-first, FIFO (seq_no) within a price.
   std::vector<Resting> snapshot() const {
@@ -161,6 +164,7 @@ class Oracle {
   Result submit(OrderId id, Side side, bool has_limit, Price limit, Qty qty,
                 std::uint32_t account, TimeInForce tif) {
     Result r;
+    const SeqNo seq = next_seq_++;
     if (qty == 0 || find(id) != npos) return r;
     r.accepted = true;
 
@@ -177,7 +181,7 @@ class Oracle {
       }
       Qty fill = std::min(qty, orders_[m].qty);
       r.trades.push_back({orders_[m].order_id, id, orders_[m].price, fill,
-                          next_trade_id_++, next_seq_});
+                          next_trade_id_++, seq});
       qty -= fill;
       orders_[m].qty -= fill;
       if (orders_[m].qty == 0) orders_.erase(orders_.begin() + static_cast<std::ptrdiff_t>(m));
@@ -187,7 +191,7 @@ class Oracle {
       if (orders_.size() >= capacity_) {
         r.pool_exhausted = true;
       } else {
-        orders_.push_back({side, limit, id, qty, account, next_seq_++});
+        orders_.push_back({side, limit, id, qty, account, seq});
         r.resting_qty = qty;
       }
     }

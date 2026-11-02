@@ -134,7 +134,7 @@ void accumulate(const diff::Stats& before, const diff::Stats& after, diff::Stats
   t.pool_exhausted += after.pool_exhausted - before.pool_exhausted;
   t.modify_ok += after.modify_ok - before.modify_ok;
   t.cancel_ok += after.cancel_ok - before.cancel_ok;
-  t.crossed_states += after.crossed_states - before.crossed_states;
+  t.modify_crossing_rejected += after.modify_crossing_rejected - before.modify_crossing_rejected;
 }
 
 bool dfs(const diff::Pair& state, unsigned step, unsigned depth, const std::vector<Sym>& alphabet,
@@ -177,17 +177,17 @@ bool run_pass(const char* name, const std::vector<Sym>& alphabet, unsigned depth
 
   const diff::Stats& s = totals.seen;
   std::printf("%-9s alphabet=%zu depth=%u capacity=%u nodes=%llu | trades=%llu stp=%llu "
-              "fok_rejected=%llu pool_exhausted=%llu modify_ok=%llu cancel_ok=%llu crossed=%llu\n",
+              "fok_rejected=%llu pool_exhausted=%llu modify_ok=%llu cancel_ok=%llu modify_crossing_rejected=%llu\n",
               name, alphabet.size(), depth, capacity, (unsigned long long)totals.nodes,
               (unsigned long long)s.trades, (unsigned long long)s.stp,
               (unsigned long long)s.fok_rejected, (unsigned long long)s.pool_exhausted,
               (unsigned long long)s.modify_ok, (unsigned long long)s.cancel_ok,
-              (unsigned long long)s.crossed_states);
+              (unsigned long long)s.modify_crossing_rejected);
 
   bool need_exhaustion = depth > capacity;
   bool vacuous = depth >= 3 && (s.trades == 0 || (need.stp && s.stp == 0) ||
                                 (need.fok_rejection && s.fok_rejected == 0) ||
-                                (need.modify && s.modify_ok == 0) ||
+                                (need.modify && (s.modify_ok == 0 || s.modify_crossing_rejected == 0)) ||
                                 (need_exhaustion && s.pool_exhausted == 0));
   if (vacuous) {
     std::fprintf(stderr, "pass '%s': a required path was never exercised\n", name);

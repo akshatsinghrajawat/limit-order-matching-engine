@@ -39,11 +39,10 @@ and a failed `rest()` leaking an empty level.
 ## What this does not establish
 
 The engine and the oracle have the same author, so a misreading of the
-spec made in both would go unnoticed. Two points are not settled by the
-spec and the oracle follows the engine on them: what `Trade::seq_no` holds,
-and that `modify_order` never crosses the book, so a crossed book is a
-legal state. Both are called out in `oracle.hpp` and should be settled in
-`spec.md` before M4 fixes them into the golden files.
+spec made in both would go unnoticed. The two points the spec first left
+open, what `Trade::seq_no` holds and whether `modify_order` can cross the
+book, are settled in ADR-009 and the oracle follows the spec text. That
+settles which behavior is intended, not that it is right.
 
 The mutants are a hand-picked list, not a systematic operator set. All
 killed means these 19 bugs are caught, not that no bug survives. Builds

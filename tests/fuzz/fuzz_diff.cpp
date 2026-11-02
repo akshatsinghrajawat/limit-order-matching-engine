@@ -58,16 +58,17 @@ int main(int argc, char** argv) {
   std::printf("fuzz_diff ok: seeds=%d ops/seed=%llu total_ops=%llu\n", seeds,
               (unsigned long long)ops, (unsigned long long)total.ops);
   std::printf("  trades=%llu stp=%llu fok_rejected=%llu pool_exhausted=%llu modify_ok=%llu "
-              "cancel_ok=%llu invalid_rejected=%llu crossed_checks=%llu\n",
+              "cancel_ok=%llu invalid_rejected=%llu modify_crossing_rejected=%llu\n",
               (unsigned long long)total.trades, (unsigned long long)total.stp,
               (unsigned long long)total.fok_rejected, (unsigned long long)total.pool_exhausted,
               (unsigned long long)total.modify_ok, (unsigned long long)total.cancel_ok,
-              (unsigned long long)total.invalid_rejected, (unsigned long long)total.crossed_states);
+              (unsigned long long)total.invalid_rejected, (unsigned long long)total.modify_crossing_rejected);
 
   // A run that never reached a path says nothing about that path.
   if (total.ops >= 10000 &&
       (total.trades == 0 || total.stp == 0 || total.fok_rejected == 0 || total.pool_exhausted == 0 ||
-       total.modify_ok == 0 || total.cancel_ok == 0 || total.invalid_rejected == 0)) {
+       total.modify_ok == 0 || total.modify_crossing_rejected == 0 || total.cancel_ok == 0 ||
+       total.invalid_rejected == 0)) {
     std::fprintf(stderr, "fuzz_diff: a path was never exercised; the run is vacuous\n");
     return 2;
   }

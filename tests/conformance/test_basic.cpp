@@ -1,5 +1,5 @@
-// Conformance tests 1-19 plus 8b/8c/12b/14b (docs/spec.md test list). Plain
-// asserts, no framework -- consistent with the project's hand-rolled-tools
+// Conformance tests 1-19 plus 8b/8c/12b/14b (docs/spec.md test list), and
+// 12c/12d for the ADR-009 decisions. Plain asserts, no framework -- consistent with the project's hand-rolled-tools
 // approach and the fact there's no oracle yet to diff against (that's M2).
 // This closes out the conformance list from the spec; M2's oracle and
 // differential fuzzer are next.
@@ -341,6 +341,62 @@ static void test19_pool_exhaustion_is_clean_rejection() {
   assert(r4.accepted && r4.resting_qty == 5 && !r4.pool_exhausted);
 }
 
+// ADR-009: a modify that would trade is refused and changes nothing, so the
+// book is never left crossed. Touching the opposite best counts.
+static void test12c_modify_that_would_cross_is_rejected() {
+  Book book(16);
+  book.add_limit_order(1, Side::Buy, 100, 5, kBuyAcct);
+  book.add_limit_order(3, Side::Buy, 100, 5, kBuyAcct);
+  book.add_limit_order(2, Side::Sell, 105, 5, kSellAcct);
+
+  assert(!book.modify_order(1, 106, 5));
+  assert(!book.modify_order(1, 105, 5));
+  assert(!book.modify_order(2, 100, 5));
+  assert(book.best_bid() == 100 && book.best_ask() == 105);
+  auto snap = book.snapshot();
+  assert(snap.size() == 3);
+  assert(snap[0].order_id == 1 && snap[0].seq_no == 0);  // still first in line
+  assert(snap[1].order_id == 3 && snap[2].order_id == 2 && snap[2].price == 105);
+  assert(book.invariant_violation() == nullptr);
+
+  assert(book.modify_order(1, 104, 5));
+  assert(book.modify_order(2, 106, 5));
+  assert(book.best_bid() == 104 && book.best_ask() == 106);
+  assert(book.invariant_violation() == nullptr);
+}
+
+// ADR-009: every command takes the next seq_no, accepted or not, and a trade
+// carries the seq_no of the command that caused it.
+static void test12d_every_command_takes_a_seq_no() {
+  Book book(16);
+  book.add_limit_order(1, Side::Sell, 100, 1, kSellAcct);  // 0
+  book.add_limit_order(2, Side::Sell, 101, 1, kSellAcct);  // 1
+  auto r = book.add_limit_order(3, Side::Buy, 101, 2, kBuyAcct);  // 2
+  assert(r.trades.size() == 2);
+  assert(r.trades[0].seq_no == 2 && r.trades[1].seq_no == 2);
+
+  assert(!book.cancel_order(99));                                         // 3
+  assert(!book.modify_order(99, 100, 1));                                 // 4
+  assert(!book.add_limit_order(4, Side::Buy, 100, 0, kBuyAcct).accepted); // 5
+  book.add_limit_order(5, Side::Buy, 90, 1, kBuyAcct);                    // 6
+  assert(!book.add_limit_order(5, Side::Buy, 91, 1, kBuyAcct).accepted);  // 7
+  book.add_limit_order(6, Side::Buy, 90, 1, kBuyAcct);                    // 8
+  r = book.add_limit_order(7, Side::Buy, 200, 5, kBuyAcct, TimeInForce::FOK);  // 9, nothing to take
+  assert(r.accepted && r.trades.empty());
+  book.add_limit_order(8, Side::Buy, 89, 1, kBuyAcct);                    // 10
+
+  auto snap = book.snapshot();
+  assert(snap.size() == 3);
+  assert(snap[0].order_id == 5 && snap[0].seq_no == 6);
+  assert(snap[1].order_id == 6 && snap[1].seq_no == 8);
+  assert(snap[2].order_id == 8 && snap[2].seq_no == 10);
+
+  r = book.add_market_order(9, Side::Sell, 1, kSellAcct);                 // 11
+  assert(r.trades.size() == 1 && r.trades[0].seq_no == 11);
+  book.add_limit_order(10, Side::Buy, 88, 1, kBuyAcct);                   // 12
+  assert(book.snapshot().back().seq_no == 12);
+}
+
 // Not a numbered spec test: snapshot() is the observation hook M2's
 // differential harness diffs through, so it gets its own check here before
 // anything is built on top of it.
@@ -436,6 +492,8 @@ int main() {
   test11_modify_price_change_moves_level();
   test12_modify_price_change_joins_existing_level_at_tail();
   test12b_modify_relink_within_same_level_preserves_fifo();
+  test12c_modify_that_would_cross_is_rejected();
+  test12d_every_command_takes_a_seq_no();
   test13_market_order_sweeps_and_cancels_remainder();
   test14_ioc_partial_fill_cancels_remainder();
   test14b_fok_pre_check_respects_self_trade_boundary();
@@ -446,6 +504,6 @@ int main() {
   test19_pool_exhaustion_is_clean_rejection();
   test_snapshot_reports_priority_order();
   test_invariants_hold_and_detect_corruption();
-  std::printf("conformance tests 1-19 (+8b, 8c, 12b, 14b): all passed\n");
+  std::printf("conformance tests 1-19 (+8b, 8c, 12b-12d, 14b): all passed\n");
   return 0;
 }

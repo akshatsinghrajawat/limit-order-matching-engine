@@ -19,7 +19,7 @@ struct Trade {
   Price price;  // S5: always the maker's price, never the taker's
   Qty qty;
   std::uint64_t trade_id;
-  SeqNo seq_no;
+  SeqNo seq_no;  // the incoming command's seq_no, shared by all its trades (ADR-009)
 };
 
 // Book owns the order pool, the two price-level containers (ADR-003: one
@@ -88,6 +88,7 @@ class Book {
                         std::uint32_t account,
                         TimeInForce tif = TimeInForce::GTC) {
     result.reset();
+    const SeqNo seq = next_seq_++;
     if (qty == 0 || id_map_.contains(order_id)) return;
 
     if (tif == TimeInForce::FOK) {
@@ -110,17 +111,17 @@ class Book {
     incoming.account = account;
 
     if (side == Side::Buy) {
-      result.stp_rejected = cross(asks_, incoming, result.trades,
+      result.stp_rejected = cross(asks_, incoming, seq, result.trades,
             [](Price resting, Price taker) { return resting <= taker; });
     } else {
-      result.stp_rejected = cross(bids_, incoming, result.trades,
+      result.stp_rejected = cross(bids_, incoming, seq, result.trades,
             [](Price resting, Price taker) { return resting >= taker; });
     }
 
     result.accepted = true;
     bool may_rest = (tif == TimeInForce::GTC) && !result.stp_rejected;
     if (may_rest && incoming.qty > 0) {
-      if (rest(side, price, incoming)) {
+      if (rest(side, price, incoming, seq)) {
         result.resting_qty = incoming.qty;
       } else {
         result.pool_exhausted = true;  // resting_qty stays 0 -- dropped,
@@ -145,6 +146,7 @@ class Book {
   void add_market_order(AddResult& result, OrderId order_id, Side side, Qty qty,
                          std::uint32_t account) {
     result.reset();
+    const SeqNo seq = next_seq_++;
     if (qty == 0 || id_map_.contains(order_id)) return;
 
     Order incoming{};
@@ -154,10 +156,10 @@ class Book {
     incoming.account = account;
 
     if (side == Side::Buy) {
-      result.stp_rejected = cross(asks_, incoming, result.trades,
+      result.stp_rejected = cross(asks_, incoming, seq, result.trades,
             [](Price, Price) { return true; });
     } else {
-      result.stp_rejected = cross(bids_, incoming, result.trades,
+      result.stp_rejected = cross(bids_, incoming, seq, result.trades,
             [](Price, Price) { return true; });
     }
 
@@ -173,16 +175,18 @@ class Book {
   }
 
   // S2: modify never frees the pool slot -- handle and order_id stay
-  // stable for the order's whole lifetime. Never crosses the book, even
-  // if the new price would be marketable (spec is silent on that case by
-  // omission, not oversight: modify only repositions, matching is
-  // add_limit_order's job alone).
+  // stable for the order's whole lifetime. A modify that would make the
+  // order marketable is rejected and changes nothing (ADR-009): modify only
+  // repositions, matching is add_limit_order's job alone, and the book is
+  // never left crossed. The caller who wants the trade cancels and
+  // resubmits.
   //
   // Rejection reuses cancel_order's "unknown or already gone" path
   // exactly -- a modify on an order_id that was cancelled, or one whose
   // slot was freed via a fill in cross(), fails the same id_map_ lookup
   // (test 8b, 8c).
   bool modify_order(OrderId order_id, Price new_price, Qty new_qty) {
+    const SeqNo seq = next_seq_++;
     if (new_qty == 0) return false;
 
     const Handle* found = id_map_.find(order_id);
@@ -206,13 +210,15 @@ class Book {
       return true;
     }
 
+    if (would_cross(order->side, new_price)) return false;
+
     Level& old_level = level_for(order->side, order->price);
     level_unlink(old_level, pool_, h.index());
     if (old_level.head == kNilIndex) erase_level(order->side, order->price);
 
     order->price = new_price;
     order->qty = new_qty;
-    order->seq_no = next_seq_++;  // S6: loses priority, gets a fresh seq_no
+    order->seq_no = seq;  // S6: loses priority, takes this command's seq_no
 
     Level& new_level = level_for_insert(order->side, new_price);
     level_append(new_level, pool_, h.index());
@@ -222,6 +228,7 @@ class Book {
   // False covers both "never existed" and "already cancelled/filled" --
   // S1/test-8 deliberately don't distinguish those at this layer.
   bool cancel_order(OrderId order_id) {
+    ++next_seq_;  // every command takes a seq_no, including this one (ADR-009)
     const Handle* found = id_map_.find(order_id);
     if (found == nullptr) return false;
 
@@ -277,9 +284,10 @@ class Book {
   // of the first violation found. A snapshot only follows next_idx, so a
   // bad prev_idx, a stale level tail, a leaked pool slot or a dangling
   // id_map_ entry would pass a snapshot diff; this walks all of them.
-  // Does not require an uncrossed book: modify_order never crosses, so a
-  // crossed book is a legal state.
+  // The book is never crossed: crossing orders trade on arrival, and a
+  // modify that would cross is rejected (ADR-009).
   const char* invariant_violation() const {
+    if (has_bid() && has_ask() && best_bid() >= best_ask()) return "book is crossed";
     std::size_t linked = 0;
     if (const char* v = check_side(bids_, Side::Buy, linked)) return v;
     if (const char* v = check_side(asks_, Side::Sell, linked)) return v;
@@ -339,7 +347,7 @@ class Book {
   // Returns true iff a self-match stopped the sweep before `incoming` was
   // exhausted -- the caller must not rest the residual in that case (S3).
   template <typename Levels, typename Crosses>
-  bool cross(Levels& resting_side, Order& incoming,
+  bool cross(Levels& resting_side, Order& incoming, SeqNo seq,
              std::vector<Trade>& trades, Crosses crosses) {
     while (incoming.qty > 0 && !resting_side.empty()) {
       Level& level = resting_side.best();
@@ -354,7 +362,7 @@ class Book {
         Qty fill = std::min(incoming.qty, maker.qty);
 
         trades.push_back({maker.order_id, incoming.order_id, maker.price,
-                           fill, next_trade_id_++, next_seq_});
+                           fill, next_trade_id_++, seq});
         incoming.qty -= fill;
         maker.qty -= fill;
 
@@ -404,22 +412,27 @@ class Book {
   // Before this fix, an invalid Handle's index() (kNilIndex, i.e.
   // 0xFFFFFFFF) flowed straight into level_append()'s pool_.unchecked()
   // unchecked -- an out-of-bounds write past the pool's backing vector.
-  // seq_no is only burned on success: an order that never entered the
-  // book shouldn't consume a sequence number. level_for_insert() may have
-  // just created a fresh empty Level for a price with no prior resting
-  // orders -- clean that up on the failure path so a full pool doesn't
-  // also leak empty levels into the price levels.
-  bool rest(Side side, Price price, Order& incoming) {
+  // level_for_insert() may have just created a fresh empty Level for a
+  // price with no prior resting orders -- clean that up on the failure path
+  // so a full pool doesn't also leak empty levels into the price levels.
+  bool rest(Side side, Price price, Order& incoming, SeqNo seq) {
     Level& level = level_for_insert(side, price);
     Handle h = pool_.allocate(incoming);
     if (!h.valid()) {
       if (level.head == kNilIndex) erase_level(side, price);
       return false;
     }
-    pool_.get(h)->seq_no = next_seq_++;  // S6: assigned by the core, on accept
+    pool_.get(h)->seq_no = seq;  // S6: the core's number for the command that rested it
     level_append(level, pool_, h.index());
     id_map_.insert(incoming.order_id, h);
     return true;
+  }
+
+  // Would an order at this price on this side trade against the opposite
+  // best? Same bound as the crosses() lambdas in add_limit_order.
+  bool would_cross(Side side, Price price) const {
+    return side == Side::Buy ? (!asks_.empty() && price >= asks_.best().price)
+                             : (!bids_.empty() && price <= bids_.best().price);
   }
 
   Level& level_for_insert(Side side, Price price) {

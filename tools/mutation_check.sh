@@ -161,8 +161,37 @@ check modify-increase-keeps-priority 1 \
   'new_qty <= order->qty' \
   'true'
 check modify-seq-no-not-advanced 1 \
-  'order->seq_no = next_seq_++;' \
-  'order->seq_no = next_seq_;'
+  'order->seq_no = seq;' \
+  ';'
+check modify-crosses-allowed 1 \
+  'if (would_cross(order->side, new_price)) return false;' \
+  ';'
+check modify-buy-touch-allowed 1 \
+  'price >= asks_.best().price' \
+  'price > asks_.best().price'
+check modify-sell-touch-allowed 1 \
+  'price <= bids_.best().price' \
+  'price < bids_.best().price'
+
+# ADR-009: every command takes a seq_no, and trades and resting orders carry it
+check limit-takes-no-seq 1 \
+  'const SeqNo seq = next_seq_++;' \
+  'const SeqNo seq = next_seq_;'
+check market-takes-no-seq 2 \
+  'const SeqNo seq = next_seq_++;' \
+  'const SeqNo seq = next_seq_;'
+check modify-takes-no-seq 3 \
+  'const SeqNo seq = next_seq_++;' \
+  'const SeqNo seq = next_seq_;'
+check cancel-takes-no-seq 1 \
+  '++next_seq_;' \
+  ';'
+check trade-seq-zero 1 \
+  'fill, next_trade_id_++, seq});' \
+  'fill, next_trade_id_++, 0});'
+check rest-seq-zero 1 \
+  'pool_.get(h)->seq_no = seq;' \
+  'pool_.get(h)->seq_no = 0;'
 
 # Bookkeeping: levels, pool slots and the id map
 check modify-leaves-empty-level 1 \

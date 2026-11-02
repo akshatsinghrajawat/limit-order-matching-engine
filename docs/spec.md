@@ -18,7 +18,9 @@ requires a documented ADR, not a silent edit.
   min 1), `seq_no` (uint64), handle implicit (index into the order pool).
 - Duplicate `order_id` detection happens at ingress, via the `order_id ->
   handle` lookup, **before** any pool allocation. A duplicate is rejected at
-  the lookup step; it never reaches the pool.
+  the lookup step; it never reaches the pool. Only orders **resting** in the
+  book count: an id that has filled or been cancelled can be used again
+  (ADR-009).
 - Allocation boundary (see ADR-005): the dedup-check-and-reject path is a
   pure lookup and is allocation-free under any map implementation. Only
   accept-and-register (inserting a *new* order_id into the map) allocates.
@@ -37,6 +39,10 @@ increments its generation counter).
   the tail of a new level — and assign a new `seq_no`. This loses time
   priority, matching the conservative common exchange rule for quantity
   increases (an increase changes book position; a decrease does not).
+- A modify whose new price would trade (a buy at or above the best ask, a
+  sell at or below the best bid) is **rejected** and changes nothing, so the
+  book is never crossed. A caller who wants the trade cancels and resubmits
+  (ADR-009).
 - Edge case: a price-change modify that resolves to the *same* level must
   unlink-then-append as one operation. Do not swap-in-place while still
   linked — that corrupts FIFO order for every order behind it. (Covered by
@@ -81,8 +87,12 @@ order's price** (never the taker's).
   and structurally, by S8 — no other command can be interleaved between the
   pre-check and the fill attempt, so nothing could have touched the book in
   between even if the check had allowed it.
+- If a limit order's residual cannot rest because the pool is full, only
+  the residual is dropped and flagged; the trades it already made stand
+  (ADR-009).
 - Execution events are emitted in match order:
   `{maker_order_id, taker_order_id, price, qty, trade_id, seq_no}`.
+  `seq_no` is the incoming command's own (S6).
 
 ## S6 — Priority
 
@@ -92,7 +102,11 @@ by the ingress ring.
 
 `seq_no` is assigned by the matching core itself, on dequeue from the
 ingress ring — never by a producer. There must be exactly one source of
-ordering truth in the system. (The same principle is why the journal, not
+ordering truth in the system. Every command takes the next number, starting
+at 0, whether or not it changes the book, so a command's `seq_no` is its
+position in the input. An order's `seq_no` is that of the command that
+rested it or last repositioned it, and the trades a command makes carry its
+number (ADR-009). (The same principle is why the journal, not
 the in-memory event vector, is the sole replay authority — see ADR-006.)
 
 ## S7 — Determinism invariants (hard, test-enforced)
