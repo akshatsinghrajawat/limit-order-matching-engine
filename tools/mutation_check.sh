@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Checks that the test suite notices when include/engine/book.hpp,
-# include/engine/id_map.hpp or include/engine/price_levels.hpp is wrong.
+# include/engine/id_map.hpp, include/engine/price_levels.hpp or
+# include/engine/journal.hpp is wrong.
 #
 # Each mutant below makes one small change to a copy of one header, rebuilds,
 # and runs ctest. A mutant is killed if the build succeeds and some test
@@ -286,6 +287,66 @@ check levels-erase-does-not-shift 1 \
 check levels-erase-not-counted 2 \
   '--count_;' \
   ';'
+
+# The command journal (ADR-010)
+use_target include/engine/journal.hpp
+check journal-crc-no-final-xor 1 \
+  'return c ^ 0xFFFFFFFFu;' \
+  'return c;'
+check journal-crc-no-initial-value 1 \
+  'std::uint32_t c = 0xFFFFFFFFu;' \
+  'std::uint32_t c = 0;'
+check journal-crc-wrong-polynomial 1 \
+  '0xEDB88320u ^' \
+  '0xEDB88321u ^'
+check journal-capacity-not-stored 1 \
+  'detail::put(out + 12, pool_capacity, 4);' \
+  ';'
+check journal-limit-fields-swapped 1 \
+  'detail::put(p, c.account, 4);' \
+  'detail::put(p, c.qty, 4);'
+check journal-price-read-narrow 1 \
+  'c.price = static_cast<Price>(detail::get(p + 2, 8));' \
+  'c.price = static_cast<Price>(detail::get(p + 2, 4));'
+check journal-magic-unchecked 1 \
+  'if (data_[i] != static_cast<std::uint8_t>(kMagic[i])) return Status::BadField;' \
+  ';'
+check journal-header-crc-unchecked 1 \
+  'if (crc32(data_, 16) != detail::get(data_ + 16, 4)) return Status::BadChecksum;' \
+  ';'
+check journal-version-unchecked 1 \
+  'if (detail::get(data_ + 8, 4) != kVersion) return Status::BadField;' \
+  ';'
+check journal-unknown-kind-accepted 1 \
+  'if (body == 1) return Status::BadKind;' \
+  ';'
+check journal-truncated-reads-as-end 1 \
+  'if (size_ - pos_ < body + 4) return Status::Truncated;' \
+  'if (size_ - pos_ < body + 4) return Status::End;'
+check journal-record-crc-unchecked 1 \
+  'if (crc32(rec, body) != detail::get(rec + body, 4)) return Status::BadChecksum;' \
+  ';'
+check journal-limit-side-and-tif-unchecked 1 \
+  'if (p[0] > 1 || p[1] > 2) return Status::BadField;' \
+  ';'
+check journal-limit-tif-unchecked 1 \
+  'p[0] > 1 || p[1] > 2' \
+  'p[0] > 1'
+check journal-market-side-unchecked 1 \
+  'if (p[0] > 1) return Status::BadField;' \
+  ';'
+check journal-reader-does-not-advance 1 \
+  'pos_ += body + 4;' \
+  ';'
+check journal-writer-no-flush 1 \
+  'std::fwrite(bytes, 1, n, file_) != n || std::fflush(file_) != 0' \
+  'std::fwrite(bytes, 1, n, file_) != n'
+check journal-writer-ignores-failure 1 \
+  'std::fwrite(bytes, 1, n, file_) != n || std::fflush(file_) != 0' \
+  'false'
+check journal-writer-skips-header 1 \
+  'return write(header, kHeaderSize);' \
+  'return true;'
 
 echo
 killed=$((total - ${#survivors[@]}))

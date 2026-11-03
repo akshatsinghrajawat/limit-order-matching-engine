@@ -105,6 +105,10 @@ if(BUILD_TESTS)
   target_link_libraries(test_id_map PRIVATE test_support alloc_counter)
   add_test(NAME unit_id_map COMMAND test_id_map)
 
+  add_executable(test_journal tests/unit/test_journal.cpp)
+  target_link_libraries(test_journal PRIVATE test_support)
+  add_test(NAME unit_journal COMMAND test_journal WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+
   add_executable(test_price_levels tests/unit/test_price_levels.cpp)
   target_link_libraries(test_price_levels PRIVATE test_support alloc_counter)
   add_test(NAME unit_price_levels COMMAND test_price_levels)
