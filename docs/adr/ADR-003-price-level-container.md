@@ -65,7 +65,9 @@ separate this effect from its own noise.
 
 - One run per build. The documented run-to-run spread on this setup is about
   1.5% at p50 and p99 and 8% at p99.9, so the p50 and p99 gains are outside
-  it and the 4% throughput difference is not.
+  it. The throughput spread on baseline day was 0.07%, but a re-run of the
+  baseline commit in this session was disturbed, so the 4% throughput
+  difference is indicative and not established.
 - Only W1, which is deep (about 1,000 levels per side). The shifts above
   cost less than the pointer chasing they replace on this book, and the
   cost grows with depth, so a much deeper book may behave differently. No
