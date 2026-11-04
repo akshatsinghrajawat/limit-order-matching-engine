@@ -1,0 +1,12 @@
+bid price=100 id=239 qty=2 account=3 seq=378
+bid price=100 id=246 qty=8 account=1 seq=391
+bid price=100 id=248 qty=8 account=1 seq=394
+bid price=98 id=242 qty=1 account=4 seq=382
+bid price=96 id=225 qty=1 account=4 seq=361
+ask price=105 id=36 qty=3 account=3 seq=56
+ask price=105 id=55 qty=2 account=2 seq=94
+ask price=105 id=72 qty=7 account=3 seq=123
+ask price=105 id=10 qty=9 account=2 seq=168
+ask price=105 id=188 qty=6 account=3 seq=303
+ask price=105 id=217 qty=7 account=2 seq=352
+orders=11

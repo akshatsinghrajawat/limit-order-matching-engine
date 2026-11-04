@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Checks that the test suite notices when include/engine/book.hpp,
 # include/engine/id_map.hpp, include/engine/price_levels.hpp or
-# include/engine/journal.hpp is wrong.
+# include/engine/journal.hpp or include/engine/replay.hpp is wrong.
 #
 # Each mutant below makes one small change to a copy of one header, rebuilds,
 # and runs ctest. A mutant is killed if the build succeeds and some test
@@ -347,6 +347,55 @@ check journal-writer-ignores-failure 1 \
 check journal-writer-skips-header 1 \
   'return write(header, kHeaderSize);' \
   'return true;'
+
+# Replay and the event log (ADR-006). The golden files are what pin these:
+# live and replayed runs share apply() and would agree on a wrong one.
+use_target include/engine/replay.hpp
+check replay-cancel-result-inverted 1 \
+  'o.ok = book.cancel_order(c.id);' \
+  'o.ok = !book.cancel_order(c.id);'
+check replay-modify-quantity-off 1 \
+  'book.modify_order(c.id, c.price, c.qty)' \
+  'book.modify_order(c.id, c.price, c.qty + 1)'
+check replay-market-ignores-account 1 \
+  'book.add_market_order(scratch, c.id, c.side, c.qty, c.account);' \
+  'book.add_market_order(scratch, c.id, c.side, c.qty, 0);'
+check replay-limit-ignores-tif 1 \
+  'c.account, c.tif);' \
+  'c.account);'
+check replay-resting-qty-dropped 1 \
+  'o.resting_qty = scratch.resting_qty;' \
+  ';'
+check replay-stp-flag-dropped 1 \
+  'o.stp_rejected = scratch.stp_rejected;' \
+  ';'
+check replay-pool-flag-dropped 1 \
+  'o.pool_exhausted = scratch.pool_exhausted;' \
+  ';'
+check replay-trade-lines-dropped 1 \
+  'for (const Trade& t : trades) {' \
+  'for (const Trade& t : trades) { continue;'
+check replay-ignores-header-capacity 1 \
+  'Book book(reader.pool_capacity());' \
+  'Book book(4096);'
+check replay-position-off-by-one 1 \
+  'append_events(out.log, out.commands, c, o, scratch.trades);' \
+  'append_events(out.log, out.commands + 1, c, o, scratch.trades);'
+check replay-commands-not-counted 1 \
+  '++out.commands;' \
+  ';'
+check replay-valid-bytes-not-set 1 \
+  'out.valid_bytes = reader.valid_bytes();' \
+  ';'
+check replay-book-not-serialized 1 \
+  'out.book = serialize_book(book);' \
+  ';'
+check replay-book-sides-swapped 1 \
+  'o.side == Side::Buy ? "bid" : "ask"' \
+  'o.side == Side::Buy ? "ask" : "bid"'
+check replay-bad-header-ignored 1 \
+  'if (out.stop != journal::Status::Ok) return false;' \
+  ';'
 
 echo
 killed=$((total - ${#survivors[@]}))

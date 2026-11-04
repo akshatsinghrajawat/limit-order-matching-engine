@@ -109,6 +109,17 @@ if(BUILD_TESTS)
   target_link_libraries(test_journal PRIVATE test_support)
   add_test(NAME unit_journal COMMAND test_journal WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
+  add_executable(test_replay tests/replay/test_replay.cpp)
+  target_link_libraries(test_replay PRIVATE test_support)
+  add_test(NAME replay_deterministic COMMAND test_replay)
+
+  # Replays the journal committed in tests/golden. Regenerate the three files
+  # with `test_golden --update` when the output changes on purpose.
+  add_executable(test_golden tests/replay/test_golden.cpp)
+  target_link_libraries(test_golden PRIVATE test_support)
+  target_compile_definitions(test_golden PRIVATE GOLDEN_DIR="${CMAKE_SOURCE_DIR}/tests/golden")
+  add_test(NAME golden_replay COMMAND test_golden)
+
   add_executable(test_price_levels tests/unit/test_price_levels.cpp)
   target_link_libraries(test_price_levels PRIVATE test_support alloc_counter)
   add_test(NAME unit_price_levels COMMAND test_price_levels)

@@ -1,0 +1,516 @@
+#0 limit id=1 side=sell price=94 qty=2 account=4 tif=ioc ok=1 rest=0 stp=0 full=0
+#1 modify id=1 price=96 qty=1 ok=0
+#2 modify id=1 price=96 qty=10 ok=0
+#3 market id=2 side=buy qty=8 account=2 ok=1 rest=0 stp=0 full=0
+#4 limit id=3 side=sell price=100 qty=4 account=2 tif=gtc ok=1 rest=4 stp=0 full=0
+#5 limit id=4 side=buy price=105 qty=1 account=1 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=5 id=0 maker=3 taker=4 price=100 qty=1
+#6 limit id=5 side=sell price=101 qty=1 account=1 tif=fok ok=1 rest=0 stp=0 full=0
+#7 cancel id=1 ok=0
+#8 cancel id=1 ok=0
+#9 limit id=6 side=sell price=101 qty=2 account=3 tif=fok ok=1 rest=0 stp=0 full=0
+#10 limit id=7 side=buy price=102 qty=6 account=4 tif=ioc ok=1 rest=0 stp=0 full=0
+  trade seq=10 id=1 maker=3 taker=7 price=100 qty=3
+#11 cancel id=6 ok=0
+#12 limit id=8 side=buy price=102 qty=8 account=4 tif=gtc ok=1 rest=8 stp=0 full=0
+#13 limit id=7 side=buy price=101 qty=4 account=3 tif=gtc ok=1 rest=4 stp=0 full=0
+#14 limit id=9 side=sell price=101 qty=8 account=3 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=14 id=2 maker=8 taker=9 price=102 qty=8
+#15 cancel id=8 ok=0
+#16 limit id=10 side=sell price=101 qty=2 account=2 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=16 id=3 maker=7 taker=10 price=101 qty=2
+#17 limit id=11 side=buy price=104 qty=5 account=2 tif=ioc ok=1 rest=0 stp=0 full=0
+#18 limit id=12 side=sell price=104 qty=7 account=4 tif=gtc ok=1 rest=7 stp=0 full=0
+#19 cancel id=7 ok=1
+#20 cancel id=8 ok=0
+#21 limit id=13 side=buy price=95 qty=4 account=1 tif=gtc ok=1 rest=4 stp=0 full=0
+#22 limit id=14 side=buy price=96 qty=3 account=4 tif=gtc ok=1 rest=3 stp=0 full=0
+#23 limit id=15 side=buy price=102 qty=2 account=1 tif=gtc ok=1 rest=2 stp=0 full=0
+#24 limit id=16 side=buy price=100 qty=4 account=1 tif=gtc ok=1 rest=4 stp=0 full=0
+#25 limit id=17 side=buy price=97 qty=5 account=1 tif=gtc ok=1 rest=5 stp=0 full=0
+#26 limit id=18 side=buy price=100 qty=3 account=4 tif=fok ok=1 rest=0 stp=0 full=0
+#27 limit id=19 side=sell price=98 qty=1 account=1 tif=ioc ok=1 rest=0 stp=1 full=0
+#28 limit id=20 side=buy price=97 qty=1 account=1 tif=fok ok=1 rest=0 stp=0 full=0
+#29 market id=21 side=buy qty=7 account=2 ok=1 rest=0 stp=0 full=0
+  trade seq=29 id=4 maker=12 taker=21 price=104 qty=7
+#30 cancel id=19 ok=0
+#31 modify id=2 price=101 qty=8 ok=0
+#32 limit id=22 side=sell price=97 qty=4 account=3 tif=fok ok=1 rest=0 stp=0 full=0
+  trade seq=32 id=5 maker=15 taker=22 price=102 qty=2
+  trade seq=32 id=6 maker=16 taker=22 price=100 qty=2
+#33 cancel id=4 ok=0
+#34 limit id=23 side=buy price=118 qty=4 account=3 tif=gtc ok=1 rest=4 stp=0 full=0
+#35 market id=24 side=sell qty=5 account=3 ok=1 rest=0 stp=1 full=0
+#36 limit id=25 side=sell price=103 qty=7 account=1 tif=gtc ok=1 rest=3 stp=0 full=0
+  trade seq=36 id=7 maker=23 taker=25 price=118 qty=4
+#37 cancel id=9 ok=0
+#38 limit id=26 side=buy price=95 qty=7 account=4 tif=gtc ok=1 rest=7 stp=0 full=0
+#39 limit id=27 side=sell price=97 qty=3 account=4 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=39 id=8 maker=16 taker=27 price=100 qty=2
+  trade seq=39 id=9 maker=17 taker=27 price=97 qty=1
+#40 market id=28 side=sell qty=7 account=2 ok=1 rest=0 stp=0 full=0
+  trade seq=40 id=10 maker=17 taker=28 price=97 qty=4
+  trade seq=40 id=11 maker=14 taker=28 price=96 qty=3
+#41 modify id=17 price=97 qty=6 ok=0
+#42 limit id=29 side=buy price=101 qty=4 account=3 tif=gtc ok=1 rest=4 stp=0 full=0
+#43 limit id=30 side=buy price=93 qty=2 account=3 tif=fok ok=1 rest=0 stp=0 full=0
+#44 limit id=31 side=sell price=96 qty=0 account=2 tif=gtc ok=0 rest=0 stp=0 full=0
+#45 limit id=32 side=sell price=98 qty=4 account=1 tif=ioc ok=1 rest=0 stp=0 full=0
+  trade seq=45 id=12 maker=29 taker=32 price=101 qty=4
+#46 cancel id=5 ok=0
+#47 cancel id=22 ok=0
+#48 cancel id=3 ok=0
+#49 modify id=25 price=95 qty=0 ok=0
+#50 limit id=33 side=buy price=103 qty=2 account=3 tif=ioc ok=1 rest=0 stp=0 full=0
+  trade seq=50 id=13 maker=25 taker=33 price=103 qty=2
+#51 modify id=7 price=101 qty=8 ok=0
+#52 modify id=16 price=105 qty=8 ok=0
+#53 limit id=34 side=sell price=97 qty=8 account=1 tif=gtc ok=1 rest=8 stp=0 full=0
+#54 limit id=35 side=buy price=103 qty=7 account=3 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=54 id=14 maker=34 taker=35 price=97 qty=7
+#55 cancel id=7 ok=0
+#56 limit id=36 side=sell price=105 qty=8 account=3 tif=gtc ok=1 rest=8 stp=0 full=0
+#57 modify id=19 price=98 qty=6 ok=0
+#58 limit id=37 side=buy price=99 qty=7 account=4 tif=gtc ok=1 rest=6 stp=0 full=0
+  trade seq=58 id=15 maker=34 taker=37 price=97 qty=1
+#59 modify id=18 price=100 qty=10 ok=0
+#60 cancel id=21 ok=0
+#61 limit id=38 side=sell price=103 qty=1 account=2 tif=fok ok=1 rest=0 stp=0 full=0
+#62 market id=39 side=buy qty=6 account=4 ok=1 rest=0 stp=0 full=0
+  trade seq=62 id=16 maker=25 taker=39 price=103 qty=1
+  trade seq=62 id=17 maker=36 taker=39 price=105 qty=5
+#63 limit id=40 side=buy price=98 qty=1 account=2 tif=gtc ok=1 rest=1 stp=0 full=0
+#64 cancel id=11 ok=0
+#65 market id=41 side=sell qty=7 account=3 ok=1 rest=0 stp=0 full=0
+  trade seq=65 id=18 maker=37 taker=41 price=99 qty=6
+  trade seq=65 id=19 maker=40 taker=41 price=98 qty=1
+#66 limit id=32 side=buy price=104 qty=4 account=2 tif=gtc ok=1 rest=4 stp=0 full=0
+#67 modify id=5 price=99 qty=3 ok=0
+#68 cancel id=33 ok=0
+#69 limit id=26 side=sell price=96 qty=5 account=4 tif=ioc ok=0 rest=0 stp=0 full=0
+#70 cancel id=26 ok=1
+#71 cancel id=40 ok=0
+#72 limit id=42 side=buy price=104 qty=6 account=3 tif=fok ok=1 rest=0 stp=0 full=0
+#73 modify id=26 price=100 qty=3 ok=0
+#74 modify id=39 price=103 qty=7 ok=0
+#75 limit id=43 side=buy price=97 qty=4 account=1 tif=gtc ok=1 rest=4 stp=0 full=0
+#76 limit id=44 side=sell price=105 qty=6 account=2 tif=fok ok=1 rest=0 stp=0 full=0
+#77 limit id=45 side=sell price=97 qty=6 account=3 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=77 id=20 maker=32 taker=45 price=104 qty=4
+  trade seq=77 id=21 maker=43 taker=45 price=97 qty=2
+#78 limit id=10 side=sell price=105 qty=7 account=2 tif=gtc ok=1 rest=7 stp=0 full=0
+#79 limit id=46 side=sell price=99 qty=2 account=1 tif=fok ok=1 rest=0 stp=0 full=0
+#80 modify id=22 price=105 qty=9 ok=0
+#81 cancel id=42 ok=0
+#82 limit id=47 side=sell price=98 qty=3 account=2 tif=fok ok=1 rest=0 stp=0 full=0
+#83 limit id=48 side=buy price=97 qty=0 account=1 tif=gtc ok=0 rest=0 stp=0 full=0
+#84 modify id=22 price=105 qty=9 ok=0
+#85 limit id=49 side=sell price=101 qty=3 account=1 tif=fok ok=1 rest=0 stp=0 full=0
+#86 cancel id=1 ok=0
+#87 limit id=50 side=buy price=105 qty=5 account=3 tif=gtc ok=1 rest=0 stp=1 full=0
+#88 cancel id=7 ok=0
+#89 limit id=51 side=sell price=98 qty=5 account=4 tif=ioc ok=1 rest=0 stp=0 full=0
+#90 limit id=52 side=sell price=116 qty=4 account=2 tif=gtc ok=1 rest=4 stp=0 full=0
+#91 limit id=53 side=buy price=97 qty=1 account=1 tif=gtc ok=1 rest=1 stp=0 full=0
+#92 cancel id=6 ok=0
+#93 limit id=54 side=sell price=99 qty=4 account=4 tif=gtc ok=1 rest=4 stp=0 full=0
+#94 limit id=55 side=sell price=105 qty=2 account=2 tif=gtc ok=1 rest=2 stp=0 full=0
+#95 market id=56 side=sell qty=6 account=1 ok=1 rest=0 stp=1 full=0
+#96 limit id=57 side=sell price=100 qty=6 account=4 tif=gtc ok=1 rest=6 stp=0 full=0
+#97 limit id=58 side=sell price=98 qty=4 account=3 tif=fok ok=1 rest=0 stp=0 full=0
+#98 market id=59 side=buy qty=7 account=4 ok=1 rest=0 stp=1 full=0
+#99 limit id=60 side=buy price=80 qty=2 account=2 tif=ioc ok=1 rest=0 stp=0 full=0
+#100 cancel id=40 ok=0
+#101 cancel id=27 ok=0
+#102 cancel id=27 ok=0
+#103 limit id=61 side=sell price=103 qty=2 account=4 tif=gtc ok=1 rest=2 stp=0 full=0
+#104 limit id=62 side=buy price=99 qty=4 account=3 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=104 id=22 maker=54 taker=62 price=99 qty=4
+#105 modify id=30 price=93 qty=5 ok=0
+#106 limit id=63 side=sell price=97 qty=5 account=4 tif=fok ok=1 rest=0 stp=0 full=0
+#107 modify id=47 price=99 qty=0 ok=0
+#108 cancel id=22 ok=0
+#109 cancel id=60 ok=0
+#110 modify id=7 price=102 qty=3 ok=0
+#111 limit id=64 side=buy price=98 qty=8 account=4 tif=ioc ok=1 rest=0 stp=0 full=0
+#112 limit id=65 side=buy price=98 qty=5 account=1 tif=gtc ok=1 rest=5 stp=0 full=0
+#113 modify id=60 price=101 qty=9 ok=0
+#114 limit id=66 side=sell price=102 qty=1 account=3 tif=gtc ok=1 rest=1 stp=0 full=0
+#115 cancel id=14 ok=0
+#116 limit id=67 side=buy price=98 qty=8 account=3 tif=gtc ok=1 rest=8 stp=0 full=0
+#117 cancel id=24 ok=0
+#118 limit id=26 side=sell price=103 qty=1 account=2 tif=gtc ok=1 rest=1 stp=0 full=0
+#119 limit id=68 side=sell price=98 qty=3 account=3 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=119 id=23 maker=65 taker=68 price=98 qty=3
+#120 limit id=69 side=sell price=95 qty=4 account=4 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=120 id=24 maker=65 taker=69 price=98 qty=2
+  trade seq=120 id=25 maker=67 taker=69 price=98 qty=2
+#121 limit id=70 side=sell price=99 qty=8 account=2 tif=gtc ok=1 rest=8 stp=0 full=0
+#122 limit id=71 side=buy price=103 qty=4 account=4 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=122 id=26 maker=70 taker=71 price=99 qty=4
+#123 limit id=72 side=sell price=105 qty=7 account=3 tif=gtc ok=1 rest=7 stp=0 full=0
+#124 cancel id=51 ok=0
+#125 limit id=73 side=buy price=99 qty=4 account=4 tif=ioc ok=1 rest=0 stp=0 full=0
+  trade seq=125 id=27 maker=70 taker=73 price=99 qty=4
+#126 limit id=74 side=sell price=99 qty=3 account=4 tif=gtc ok=1 rest=3 stp=0 full=0
+#127 limit id=65 side=sell price=100 qty=4 account=3 tif=gtc ok=1 rest=4 stp=0 full=0
+#128 limit id=75 side=buy price=101 qty=2 account=2 tif=ioc ok=1 rest=0 stp=0 full=0
+  trade seq=128 id=28 maker=74 taker=75 price=99 qty=2
+#129 limit id=76 side=buy price=101 qty=7 account=1 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=129 id=29 maker=74 taker=76 price=99 qty=1
+  trade seq=129 id=30 maker=57 taker=76 price=100 qty=6
+#130 market id=77 side=buy qty=3 account=1 ok=1 rest=0 stp=0 full=0
+  trade seq=130 id=31 maker=65 taker=77 price=100 qty=3
+#131 limit id=78 side=buy price=100 qty=5 account=3 tif=gtc ok=1 rest=0 stp=1 full=0
+#132 limit id=1 side=sell price=100 qty=7 account=2 tif=fok ok=1 rest=0 stp=0 full=0
+#133 modify id=69 price=95 qty=3 ok=0
+#134 cancel id=41 ok=0
+#135 limit id=79 side=sell price=95 qty=5 account=4 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=135 id=32 maker=67 taker=79 price=98 qty=5
+#136 limit id=80 side=sell price=98 qty=4 account=4 tif=gtc ok=1 rest=3 stp=0 full=0
+  trade seq=136 id=33 maker=67 taker=80 price=98 qty=1
+#137 limit id=81 side=sell price=101 qty=7 account=4 tif=gtc ok=1 rest=7 stp=0 full=0
+#138 limit id=82 side=buy price=96 qty=7 account=1 tif=fok ok=1 rest=0 stp=0 full=0
+#139 limit id=83 side=sell price=97 qty=1 account=1 tif=gtc ok=1 rest=0 stp=1 full=0
+#140 modify id=39 price=104 qty=3 ok=0
+#141 cancel id=42 ok=0
+#142 market id=84 side=sell qty=4 account=1 ok=1 rest=0 stp=1 full=0
+#143 cancel id=26 ok=1
+#144 limit id=85 side=buy price=101 qty=5 account=1 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=144 id=34 maker=80 taker=85 price=98 qty=3
+  trade seq=144 id=35 maker=65 taker=85 price=100 qty=1
+  trade seq=144 id=36 maker=81 taker=85 price=101 qty=1
+#145 limit id=86 side=sell price=97 qty=8 account=1 tif=gtc ok=1 rest=0 stp=1 full=0
+#146 limit id=87 side=sell price=105 qty=2 account=1 tif=ioc ok=1 rest=0 stp=0 full=0
+#147 cancel id=78 ok=0
+#148 limit id=88 side=sell price=99 qty=4 account=3 tif=fok ok=1 rest=0 stp=0 full=0
+#149 modify id=87 price=95 qty=6 ok=0
+#150 limit id=89 side=sell price=95 qty=1 account=1 tif=fok ok=1 rest=0 stp=0 full=0
+#151 cancel id=35 ok=0
+#152 modify id=76 price=101 qty=4 ok=0
+#153 market id=90 side=sell qty=4 account=4 ok=1 rest=0 stp=0 full=0
+  trade seq=153 id=37 maker=43 taker=90 price=97 qty=2
+  trade seq=153 id=38 maker=53 taker=90 price=97 qty=1
+  trade seq=153 id=39 maker=13 taker=90 price=95 qty=1
+#154 limit id=91 side=sell price=102 qty=5 account=2 tif=fok ok=1 rest=0 stp=0 full=0
+#155 limit id=92 side=sell price=96 qty=8 account=1 tif=ioc ok=1 rest=0 stp=0 full=0
+#156 limit id=93 side=buy price=96 qty=3 account=2 tif=gtc ok=1 rest=3 stp=0 full=0
+#157 limit id=94 side=buy price=105 qty=2 account=1 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=157 id=40 maker=81 taker=94 price=101 qty=2
+#158 limit id=95 side=sell price=95 qty=8 account=1 tif=fok ok=1 rest=0 stp=0 full=0
+#159 modify id=76 price=101 qty=2 ok=0
+#160 cancel id=90 ok=0
+#161 modify id=66 price=102 qty=3 ok=1
+#162 limit id=96 side=buy price=99 qty=1 account=3 tif=ioc ok=1 rest=0 stp=0 full=0
+#163 limit id=97 side=sell price=96 qty=7 account=1 tif=gtc ok=1 rest=4 stp=0 full=0
+  trade seq=163 id=41 maker=93 taker=97 price=96 qty=3
+#164 limit id=98 side=buy price=104 qty=8 account=2 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=164 id=42 maker=97 taker=98 price=96 qty=4
+  trade seq=164 id=43 maker=81 taker=98 price=101 qty=4
+#165 modify id=58 price=102 qty=7 ok=0
+#166 modify id=52 price=104 qty=3 ok=1
+#167 limit id=99 side=sell price=102 qty=3 account=2 tif=gtc ok=1 rest=3 stp=0 full=0
+#168 modify id=10 price=105 qty=9 ok=1
+#169 limit id=100 side=buy price=102 qty=8 account=3 tif=gtc ok=1 rest=0 stp=1 full=0
+#170 cancel id=57 ok=0
+#171 limit id=73 side=buy price=103 qty=1 account=2 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=171 id=44 maker=66 taker=73 price=102 qty=1
+#172 cancel id=54 ok=0
+#173 limit id=101 side=buy price=99 qty=4 account=4 tif=gtc ok=1 rest=4 stp=0 full=0
+#174 limit id=102 side=sell price=100 qty=3 account=3 tif=ioc ok=1 rest=0 stp=0 full=0
+#175 limit id=103 side=sell price=83 qty=5 account=4 tif=gtc ok=1 rest=0 stp=1 full=0
+#176 market id=104 side=sell qty=7 account=1 ok=1 rest=0 stp=1 full=0
+  trade seq=176 id=45 maker=101 taker=104 price=99 qty=4
+#177 limit id=105 side=sell price=99 qty=8 account=2 tif=gtc ok=1 rest=8 stp=0 full=0
+#178 limit id=106 side=buy price=100 qty=5 account=3 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=178 id=46 maker=105 taker=106 price=99 qty=5
+#179 limit id=107 side=buy price=102 qty=2 account=4 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=179 id=47 maker=105 taker=107 price=99 qty=2
+#180 limit id=108 side=buy price=107 qty=2 account=2 tif=fok ok=1 rest=0 stp=0 full=0
+#181 modify id=108 price=107 qty=7 ok=0
+#182 limit id=109 side=sell price=105 qty=5 account=4 tif=gtc ok=1 rest=5 stp=0 full=0
+#183 cancel id=74 ok=0
+#184 cancel id=75 ok=0
+#185 limit id=110 side=buy price=105 qty=1 account=3 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=185 id=48 maker=105 taker=110 price=99 qty=1
+#186 modify id=96 price=99 qty=7 ok=0
+#187 limit id=111 side=buy price=104 qty=5 account=4 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=187 id=49 maker=66 taker=111 price=102 qty=2
+  trade seq=187 id=50 maker=99 taker=111 price=102 qty=3
+#188 market id=112 side=buy qty=8 account=4 ok=1 rest=0 stp=1 full=0
+#189 limit id=113 side=sell price=98 qty=5 account=2 tif=gtc ok=1 rest=5 stp=0 full=0
+#190 limit id=114 side=buy price=105 qty=3 account=2 tif=gtc ok=1 rest=0 stp=1 full=0
+#191 limit id=115 side=buy price=96 qty=2 account=1 tif=gtc ok=1 rest=2 stp=0 full=0
+#192 cancel id=79 ok=0
+#193 modify id=109 price=102 qty=2 ok=1
+#194 limit id=116 side=buy price=99 qty=7 account=4 tif=gtc ok=1 rest=2 stp=0 full=0
+  trade seq=194 id=51 maker=113 taker=116 price=98 qty=5
+#195 limit id=117 side=sell price=104 qty=1 account=3 tif=gtc ok=1 rest=1 stp=0 full=0
+#196 limit id=118 side=sell price=100 qty=5 account=3 tif=gtc ok=1 rest=5 stp=0 full=0
+#197 limit id=119 side=buy price=102 qty=6 account=1 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=197 id=52 maker=118 taker=119 price=100 qty=5
+  trade seq=197 id=53 maker=109 taker=119 price=102 qty=1
+#198 modify id=100 price=102 qty=6 ok=0
+#199 limit id=120 side=buy price=95 qty=3 account=3 tif=gtc ok=1 rest=3 stp=0 full=0
+#200 limit id=121 side=buy price=104 qty=3 account=2 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=200 id=54 maker=109 taker=121 price=102 qty=1
+  trade seq=200 id=55 maker=61 taker=121 price=103 qty=2
+#201 modify id=102 price=100 qty=1 ok=0
+#202 limit id=122 side=sell price=103 qty=4 account=3 tif=gtc ok=1 rest=4 stp=0 full=0
+#203 limit id=123 side=buy price=101 qty=5 account=3 tif=gtc ok=1 rest=5 stp=0 full=0
+#204 limit id=124 side=sell price=100 qty=8 account=4 tif=gtc ok=1 rest=3 stp=0 full=0
+  trade seq=204 id=56 maker=123 taker=124 price=101 qty=5
+#205 modify id=15 price=102 qty=2 ok=0
+#206 cancel id=88 ok=0
+#207 modify id=117 price=98 qty=7 ok=0
+#208 limit id=125 side=buy price=98 qty=7 account=3 tif=ioc ok=1 rest=0 stp=0 full=0
+#209 limit id=126 side=buy price=95 qty=2 account=4 tif=gtc ok=1 rest=2 stp=0 full=0
+#210 limit id=127 side=sell price=101 qty=6 account=2 tif=gtc ok=1 rest=6 stp=0 full=0
+#211 modify id=114 price=91 qty=3 ok=0
+#212 limit id=128 side=sell price=101 qty=6 account=2 tif=ioc ok=1 rest=0 stp=0 full=0
+#213 limit id=129 side=sell price=95 qty=1 account=1 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=213 id=57 maker=116 taker=129 price=99 qty=1
+#214 cancel id=117 ok=1
+#215 limit id=130 side=sell price=96 qty=2 account=2 tif=ioc ok=1 rest=0 stp=0 full=0
+  trade seq=215 id=58 maker=116 taker=130 price=99 qty=1
+  trade seq=215 id=59 maker=115 taker=130 price=96 qty=1
+#216 limit id=131 side=buy price=100 qty=1 account=1 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=216 id=60 maker=124 taker=131 price=100 qty=1
+#217 limit id=132 side=buy price=102 qty=4 account=2 tif=ioc ok=1 rest=0 stp=1 full=0
+  trade seq=217 id=61 maker=124 taker=132 price=100 qty=2
+#218 cancel id=77 ok=0
+#219 limit id=133 side=sell price=96 qty=7 account=3 tif=gtc ok=1 rest=6 stp=0 full=0
+  trade seq=219 id=62 maker=115 taker=133 price=96 qty=1
+#220 modify id=126 price=95 qty=1 ok=1
+#221 limit id=134 side=sell price=95 qty=6 account=2 tif=fok ok=1 rest=0 stp=0 full=0
+  trade seq=221 id=63 maker=13 taker=134 price=95 qty=3
+  trade seq=221 id=64 maker=120 taker=134 price=95 qty=3
+#222 limit id=135 side=buy price=101 qty=3 account=1 tif=ioc ok=1 rest=0 stp=0 full=0
+  trade seq=222 id=65 maker=133 taker=135 price=96 qty=3
+#223 limit id=136 side=sell price=101 qty=7 account=3 tif=gtc ok=1 rest=7 stp=0 full=0
+#224 limit id=137 side=sell price=98 qty=6 account=1 tif=ioc ok=1 rest=0 stp=0 full=0
+#225 modify id=8 price=102 qty=1 ok=0
+#226 modify id=126 price=102 qty=4 ok=0
+#227 limit id=138 side=buy price=105 qty=2 account=3 tif=gtc ok=1 rest=0 stp=1 full=0
+#228 limit id=139 side=buy price=98 qty=8 account=2 tif=fok ok=1 rest=0 stp=0 full=0
+#229 limit id=140 side=sell price=103 qty=6 account=4 tif=gtc ok=1 rest=6 stp=0 full=0
+#230 limit id=141 side=buy price=105 qty=4 account=3 tif=gtc ok=1 rest=0 stp=1 full=0
+#231 limit id=142 side=sell price=97 qty=5 account=4 tif=gtc ok=1 rest=5 stp=0 full=0
+#232 limit id=143 side=sell price=100 qty=8 account=1 tif=fok ok=1 rest=0 stp=0 full=0
+#233 limit id=144 side=buy price=97 qty=2 account=4 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=233 id=66 maker=133 taker=144 price=96 qty=2
+#234 limit id=145 side=buy price=103 qty=4 account=2 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=234 id=67 maker=133 taker=145 price=96 qty=1
+  trade seq=234 id=68 maker=142 taker=145 price=97 qty=3
+#235 limit id=146 side=buy price=104 qty=3 account=2 tif=ioc ok=1 rest=0 stp=1 full=0
+  trade seq=235 id=69 maker=142 taker=146 price=97 qty=2
+#236 modify id=123 price=103 qty=6 ok=0
+#237 cancel id=128 ok=0
+#238 limit id=147 side=buy price=104 qty=6 account=1 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=238 id=70 maker=127 taker=147 price=101 qty=6
+#239 limit id=148 side=sell price=98 qty=7 account=2 tif=gtc ok=1 rest=7 stp=0 full=0
+#240 limit id=149 side=sell price=98 qty=8 account=2 tif=gtc ok=1 rest=8 stp=0 full=0
+#241 cancel id=105 ok=0
+#242 limit id=150 side=sell price=102 qty=6 account=4 tif=gtc ok=1 rest=6 stp=0 full=0
+#243 cancel id=101 ok=0
+#244 limit id=151 side=sell price=98 qty=2 account=4 tif=gtc ok=1 rest=2 stp=0 full=0
+#245 limit id=152 side=sell price=100 qty=3 account=3 tif=fok ok=1 rest=0 stp=0 full=0
+#246 cancel id=132 ok=0
+#247 limit id=153 side=sell price=100 qty=8 account=4 tif=fok ok=1 rest=0 stp=0 full=0
+#248 limit id=154 side=buy price=102 qty=8 account=3 tif=fok ok=1 rest=0 stp=0 full=0
+  trade seq=248 id=71 maker=148 taker=154 price=98 qty=7
+  trade seq=248 id=72 maker=149 taker=154 price=98 qty=1
+#249 cancel id=100 ok=0
+#250 limit id=155 side=sell price=100 qty=7 account=3 tif=gtc ok=1 rest=7 stp=0 full=0
+#251 limit id=156 side=buy price=98 qty=3 account=1 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=251 id=73 maker=149 taker=156 price=98 qty=3
+#252 limit id=157 side=buy price=101 qty=5 account=4 tif=gtc ok=1 rest=0 stp=1 full=0
+  trade seq=252 id=74 maker=149 taker=157 price=98 qty=4
+#253 modify id=108 price=96 qty=5 ok=0
+#254 cancel id=98 ok=0
+#255 limit id=158 side=sell price=98 qty=2 account=4 tif=ioc ok=1 rest=0 stp=0 full=0
+#256 limit id=159 side=sell price=99 qty=8 account=3 tif=gtc ok=1 rest=8 stp=0 full=0
+#257 modify id=127 price=98 qty=7 ok=0
+#258 cancel id=142 ok=0
+#259 modify id=76 price=101 qty=10 ok=0
+#260 limit id=160 side=sell price=99 qty=5 account=4 tif=fok ok=1 rest=0 stp=0 full=0
+#261 limit id=161 side=sell price=101 qty=4 account=2 tif=gtc ok=1 rest=4 stp=0 full=0
+#262 cancel id=134 ok=0
+#263 cancel id=117 ok=0
+#264 limit id=162 side=buy price=95 qty=8 account=3 tif=gtc ok=1 rest=8 stp=0 full=0
+#265 limit id=163 side=sell price=100 qty=1 account=3 tif=gtc ok=1 rest=1 stp=0 full=0
+#266 limit id=164 side=sell price=100 qty=1 account=3 tif=gtc ok=1 rest=0 stp=0 full=1
+#267 limit id=165 side=buy price=95 qty=3 account=2 tif=gtc ok=1 rest=0 stp=0 full=1
+#268 limit id=166 side=sell price=100 qty=2 account=2 tif=gtc ok=1 rest=0 stp=0 full=1
+#269 modify id=148 price=99 qty=5 ok=0
+#270 limit id=167 side=buy price=99 qty=6 account=4 tif=ioc ok=1 rest=0 stp=1 full=0
+#271 limit id=168 side=sell price=96 qty=2 account=1 tif=gtc ok=1 rest=0 stp=0 full=1
+#272 cancel id=56 ok=0
+#273 market id=169 side=sell qty=5 account=2 ok=1 rest=0 stp=0 full=0
+  trade seq=273 id=75 maker=126 taker=169 price=95 qty=1
+  trade seq=273 id=76 maker=162 taker=169 price=95 qty=4
+#274 modify id=119 price=100 qty=7 ok=0
+#275 limit id=170 side=sell price=104 qty=5 account=1 tif=fok ok=1 rest=0 stp=0 full=0
+#276 limit id=171 side=sell price=98 qty=6 account=1 tif=ioc ok=1 rest=0 stp=0 full=0
+#277 cancel id=162 ok=1
+#278 modify id=149 price=100 qty=2 ok=0
+#279 limit id=172 side=sell price=95 qty=8 account=3 tif=gtc ok=1 rest=8 stp=0 full=0
+#280 modify id=149 price=100 qty=8 ok=0
+#281 limit id=173 side=buy price=99 qty=6 account=2 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=281 id=77 maker=172 taker=173 price=95 qty=6
+#282 limit id=174 side=buy price=103 qty=1 account=4 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=282 id=78 maker=172 taker=174 price=95 qty=1
+#283 limit id=175 side=buy price=99 qty=1 account=3 tif=gtc ok=1 rest=0 stp=1 full=0
+#284 limit id=176 side=sell price=104 qty=1 account=4 tif=ioc ok=1 rest=0 stp=0 full=0
+#285 limit id=177 side=sell price=101 qty=1 account=4 tif=gtc ok=1 rest=1 stp=0 full=0
+#286 cancel id=165 ok=0
+#287 cancel id=26 ok=0
+#288 market id=178 side=buy qty=6 account=4 ok=1 rest=0 stp=1 full=0
+  trade seq=288 id=79 maker=172 taker=178 price=95 qty=1
+#289 market id=179 side=buy qty=8 account=4 ok=1 rest=0 stp=1 full=0
+#290 limit id=180 side=sell price=95 qty=8 account=1 tif=gtc ok=1 rest=8 stp=0 full=0
+#291 modify id=146 price=104 qty=10 ok=0
+#292 limit id=181 side=buy price=100 qty=2 account=2 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=292 id=80 maker=180 taker=181 price=95 qty=2
+#293 modify id=175 price=104 qty=5 ok=0
+#294 cancel id=2 ok=0
+#295 limit id=182 side=sell price=100 qty=8 account=2 tif=gtc ok=1 rest=0 stp=0 full=1
+#296 cancel id=122 ok=1
+#297 limit id=183 side=buy price=105 qty=1 account=4 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=297 id=81 maker=180 taker=183 price=95 qty=1
+#298 limit id=184 side=sell price=102 qty=8 account=2 tif=ioc ok=1 rest=0 stp=0 full=0
+#299 modify id=179 price=96 qty=4 ok=0
+#300 limit id=185 side=buy price=103 qty=7 account=3 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=300 id=82 maker=180 taker=185 price=95 qty=5
+  trade seq=300 id=83 maker=151 taker=185 price=98 qty=2
+#301 market id=186 side=buy qty=3 account=2 ok=1 rest=0 stp=0 full=0
+  trade seq=301 id=84 maker=159 taker=186 price=99 qty=3
+#302 limit id=187 side=buy price=99 qty=2 account=3 tif=gtc ok=1 rest=0 stp=1 full=0
+#303 limit id=188 side=sell price=105 qty=6 account=3 tif=gtc ok=1 rest=6 stp=0 full=0
+#304 limit id=189 side=buy price=96 qty=2 account=4 tif=gtc ok=1 rest=2 stp=0 full=0
+#305 limit id=190 side=buy price=97 qty=7 account=1 tif=gtc ok=1 rest=7 stp=0 full=0
+#306 modify id=138 price=105 qty=7 ok=0
+#307 market id=191 side=sell qty=1 account=4 ok=1 rest=0 stp=0 full=0
+  trade seq=307 id=85 maker=190 taker=191 price=97 qty=1
+#308 limit id=192 side=sell price=89 qty=5 account=1 tif=gtc ok=1 rest=0 stp=1 full=0
+#309 modify id=140 price=103 qty=1 ok=1
+#310 cancel id=176 ok=0
+#311 limit id=193 side=buy price=99 qty=1 account=1 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=311 id=86 maker=159 taker=193 price=99 qty=1
+#312 modify id=8 price=105 qty=2 ok=0
+#313 limit id=194 side=sell price=104 qty=7 account=2 tif=gtc ok=1 rest=0 stp=0 full=1
+#314 modify id=187 price=99 qty=1 ok=0
+#315 modify id=82 price=97 qty=9 ok=0
+#316 modify id=142 price=105 qty=7 ok=0
+#317 cancel id=176 ok=0
+#318 modify id=26 price=103 qty=1 ok=0
+#319 modify id=176 price=98 qty=4 ok=0
+#320 limit id=195 side=sell price=104 qty=5 account=3 tif=gtc ok=1 rest=0 stp=0 full=1
+#321 limit id=196 side=buy price=101 qty=4 account=2 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=321 id=87 maker=159 taker=196 price=99 qty=4
+#322 limit id=197 side=sell price=100 qty=2 account=3 tif=gtc ok=1 rest=2 stp=0 full=0
+#323 modify id=153 price=95 qty=8 ok=0
+#324 cancel id=152 ok=0
+#325 limit id=198 side=sell price=100 qty=8 account=3 tif=gtc ok=1 rest=0 stp=0 full=1
+#326 limit id=199 side=sell price=110 qty=8 account=4 tif=gtc ok=1 rest=0 stp=0 full=1
+#327 limit id=200 side=buy price=98 qty=5 account=4 tif=gtc ok=1 rest=0 stp=0 full=1
+#328 limit id=201 side=buy price=92 qty=2 account=4 tif=ioc ok=1 rest=0 stp=0 full=0
+#329 limit id=202 side=sell price=105 qty=2 account=3 tif=gtc ok=1 rest=0 stp=0 full=1
+#330 limit id=203 side=buy price=101 qty=6 account=2 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=330 id=88 maker=155 taker=203 price=100 qty=6
+#331 cancel id=191 ok=0
+#332 market id=204 side=sell qty=5 account=3 ok=1 rest=0 stp=0 full=0
+  trade seq=332 id=89 maker=190 taker=204 price=97 qty=5
+#333 limit id=205 side=sell price=99 qty=2 account=2 tif=ioc ok=1 rest=0 stp=0 full=0
+#334 cancel id=143 ok=0
+#335 cancel id=194 ok=0
+#336 limit id=206 side=buy price=95 qty=2 account=1 tif=fok ok=1 rest=0 stp=0 full=0
+#337 limit id=207 side=sell price=102 qty=2 account=4 tif=gtc ok=1 rest=0 stp=0 full=1
+#338 limit id=208 side=buy price=105 qty=1 account=1 tif=ioc ok=1 rest=0 stp=0 full=0
+  trade seq=338 id=90 maker=155 taker=208 price=100 qty=1
+#339 modify id=200 price=100 qty=1 ok=0
+#340 limit id=209 side=sell price=101 qty=3 account=1 tif=gtc ok=1 rest=3 stp=0 full=0
+#341 limit id=210 side=buy price=100 qty=6 account=4 tif=fok ok=1 rest=0 stp=0 full=0
+#342 cancel id=178 ok=0
+#343 modify id=174 price=105 qty=4 ok=0
+#344 cancel id=172 ok=0
+#345 limit id=211 side=sell price=81 qty=7 account=3 tif=gtc ok=1 rest=4 stp=0 full=0
+  trade seq=345 id=91 maker=190 taker=211 price=97 qty=1
+  trade seq=345 id=92 maker=189 taker=211 price=96 qty=2
+#346 limit id=212 side=buy price=101 qty=0 account=4 tif=gtc ok=0 rest=0 stp=0 full=0
+#347 limit id=213 side=sell price=102 qty=4 account=1 tif=gtc ok=1 rest=4 stp=0 full=0
+#348 market id=214 side=buy qty=1 account=1 ok=1 rest=0 stp=0 full=0
+  trade seq=348 id=93 maker=211 taker=214 price=81 qty=1
+#349 market id=215 side=sell qty=2 account=4 ok=1 rest=0 stp=0 full=0
+#350 modify id=156 price=98 qty=0 ok=0
+#351 limit id=216 side=buy price=96 qty=4 account=2 tif=ioc ok=1 rest=0 stp=0 full=0
+  trade seq=351 id=94 maker=211 taker=216 price=81 qty=3
+#352 limit id=217 side=sell price=105 qty=7 account=2 tif=gtc ok=1 rest=7 stp=0 full=0
+#353 limit id=218 side=buy price=100 qty=3 account=1 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=353 id=95 maker=163 taker=218 price=100 qty=1
+  trade seq=353 id=96 maker=197 taker=218 price=100 qty=2
+#354 limit id=219 side=sell price=102 qty=1 account=2 tif=ioc ok=1 rest=0 stp=0 full=0
+#355 limit id=220 side=sell price=99 qty=5 account=4 tif=gtc ok=1 rest=5 stp=0 full=0
+#356 limit id=221 side=buy price=101 qty=4 account=3 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=356 id=97 maker=220 taker=221 price=99 qty=4
+#357 limit id=222 side=sell price=96 qty=1 account=1 tif=fok ok=1 rest=0 stp=0 full=0
+#358 limit id=223 side=buy price=103 qty=8 account=2 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=358 id=98 maker=220 taker=223 price=99 qty=1
+  trade seq=358 id=99 maker=136 taker=223 price=101 qty=7
+#359 modify id=159 price=83 qty=3 ok=0
+#360 limit id=224 side=sell price=104 qty=1 account=4 tif=ioc ok=1 rest=0 stp=0 full=0
+#361 limit id=225 side=buy price=96 qty=1 account=4 tif=gtc ok=1 rest=1 stp=0 full=0
+#362 limit id=226 side=sell price=97 qty=3 account=3 tif=gtc ok=1 rest=3 stp=0 full=0
+#363 limit id=227 side=sell price=97 qty=5 account=3 tif=fok ok=1 rest=0 stp=0 full=0
+#364 limit id=228 side=buy price=100 qty=6 account=2 tif=gtc ok=1 rest=3 stp=0 full=0
+  trade seq=364 id=100 maker=226 taker=228 price=97 qty=3
+#365 limit id=229 side=sell price=104 qty=1 account=4 tif=gtc ok=1 rest=1 stp=0 full=0
+#366 limit id=230 side=buy price=99 qty=2 account=4 tif=gtc ok=1 rest=0 stp=0 full=1
+#367 cancel id=5 ok=0
+#368 limit id=231 side=buy price=100 qty=8 account=3 tif=gtc ok=1 rest=0 stp=0 full=1
+#369 limit id=232 side=sell price=102 qty=2 account=2 tif=gtc ok=1 rest=0 stp=0 full=1
+#370 limit id=233 side=buy price=83 qty=2 account=2 tif=ioc ok=1 rest=0 stp=0 full=0
+#371 limit id=180 side=sell price=107 qty=6 account=4 tif=gtc ok=1 rest=0 stp=0 full=1
+#372 limit id=234 side=buy price=104 qty=8 account=3 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=372 id=101 maker=161 taker=234 price=101 qty=4
+  trade seq=372 id=102 maker=177 taker=234 price=101 qty=1
+  trade seq=372 id=103 maker=209 taker=234 price=101 qty=3
+#373 limit id=235 side=sell price=95 qty=1 account=1 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=373 id=104 maker=228 taker=235 price=100 qty=1
+#374 cancel id=23 ok=0
+#375 limit id=236 side=buy price=104 qty=6 account=3 tif=fok ok=1 rest=0 stp=0 full=0
+  trade seq=375 id=105 maker=150 taker=236 price=102 qty=6
+#376 limit id=237 side=buy price=101 qty=4 account=2 tif=ioc ok=1 rest=0 stp=0 full=0
+#377 limit id=238 side=sell price=100 qty=8 account=2 tif=fok ok=1 rest=0 stp=0 full=0
+#378 limit id=239 side=buy price=100 qty=7 account=3 tif=gtc ok=1 rest=7 stp=0 full=0
+#379 limit id=240 side=buy price=104 qty=7 account=1 tif=gtc ok=1 rest=0 stp=1 full=0
+#380 cancel id=233 ok=0
+#381 limit id=241 side=sell price=98 qty=2 account=3 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=381 id=106 maker=228 taker=241 price=100 qty=2
+#382 limit id=242 side=buy price=98 qty=1 account=4 tif=gtc ok=1 rest=1 stp=0 full=0
+#383 modify id=202 price=105 qty=8 ok=0
+#384 limit id=243 side=buy price=95 qty=5 account=1 tif=gtc ok=1 rest=5 stp=0 full=0
+#385 cancel id=186 ok=0
+#386 limit id=244 side=buy price=103 qty=6 account=3 tif=gtc ok=1 rest=1 stp=0 full=0
+  trade seq=386 id=107 maker=213 taker=244 price=102 qty=4
+  trade seq=386 id=108 maker=140 taker=244 price=103 qty=1
+#387 cancel id=243 ok=1
+#388 cancel id=114 ok=0
+#389 limit id=245 side=sell price=99 qty=2 account=4 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=389 id=109 maker=244 taker=245 price=103 qty=1
+  trade seq=389 id=110 maker=239 taker=245 price=100 qty=1
+#390 cancel id=197 ok=0
+#391 limit id=246 side=buy price=100 qty=8 account=1 tif=gtc ok=1 rest=8 stp=0 full=0
+#392 cancel id=228 ok=0
+#393 limit id=247 side=sell price=100 qty=0 account=1 tif=gtc ok=0 rest=0 stp=0 full=0
+#394 limit id=248 side=buy price=100 qty=8 account=1 tif=gtc ok=1 rest=8 stp=0 full=0
+#395 limit id=249 side=sell price=100 qty=4 account=4 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=395 id=111 maker=239 taker=249 price=100 qty=4
+#396 limit id=250 side=buy price=104 qty=7 account=1 tif=gtc ok=1 rest=3 stp=0 full=0
+  trade seq=396 id=112 maker=52 taker=250 price=104 qty=3
+  trade seq=396 id=113 maker=229 taker=250 price=104 qty=1
+#397 limit id=251 side=sell price=105 qty=6 account=2 tif=fok ok=1 rest=0 stp=0 full=0
+#398 limit id=252 side=sell price=97 qty=1 account=3 tif=fok ok=1 rest=0 stp=0 full=0
+  trade seq=398 id=114 maker=250 taker=252 price=104 qty=1
+#399 limit id=253 side=sell price=98 qty=2 account=4 tif=gtc ok=1 rest=0 stp=0 full=0
+  trade seq=399 id=115 maker=250 taker=253 price=104 qty=2
