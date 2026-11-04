@@ -1,0 +1,24 @@
+# cpu_model: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz
+# pinned_cpu: 3
+# governor: performance
+# turbo: disabled
+# ram: 15753 MiB
+# kernel: Linux 7.0.0-42-generic
+# compiler: GNU 15.2.0
+# flags: -O3 -march=native -fno-plt -O3 -DNDEBUG -Wall -Wextra -Wpedantic
+# tsc: invariant, 2.4192 GHz
+# binary_hash: c989ce5a10abbc85
+# methodology_version: 1
+# label: ubuntu-i5-1135G7-main
+# workload: W1
+# seed: 1
+# warmup_ops: 100000
+# measured_ops: 1000000
+# latency_timing: per-op rdtscp+lfence, timer overhead not subtracted
+# timer_overhead_p50_ns: 21.1
+# throughput_timing: batched, one rdtscp pair around all measured ops
+# trades: 388435
+# throughput_ops_per_sec: 5440715
+kind,samples,p50_ns,p99_ns,p999_ns,p9999_ns,max_ns
+limit,696222,132.7,432.8,2702.5,3672.7,20572.0
+cancel,303778,303.4,572.9,2719.1,3771.9,30883.7
