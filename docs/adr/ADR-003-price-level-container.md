@@ -8,8 +8,9 @@ best price, so the best level is the last element (`PriceLevels`,
 pool capacity plus one levels, and never grows. This is candidate (b) of
 the three this ADR listed; it replaced `std::map` (a).
 
-It is an interim container. The planned replacement is candidate (c), a
-page table, which needs a price band in the spec (see Status).
+Candidate (c), a page table, would remove the shifting but needs a price
+band in the spec; it is deferred until a measurement shows the shifts
+matter (see Status).
 
 ## Rationale
 
@@ -37,40 +38,50 @@ the middle of a deep book is the expensive case.
 
 ## Measured
 
-Unpinned sandbox, three runs alternating the `std::map` build (after O2)
-with this one, same seed and workload. The absolute numbers say nothing
-about your machine and the runs were noisy; the gap is far larger than the
-noise.
+Pinned core on the benchmark machine (i5-1135G7, core 3, `performance`
+governor, turbo off, GCC 15.2), one session on 2026-11-04, one run per
+build, W1 seed 1 with 1,000,000 measured commands. "O2" is the build with
+`std::map` levels and the flat id map; "O3" is this container. The
+`bench/results/ubuntu-i5-1135G7-{o2,o3}-*.csv` files hold the full runs.
 
-| | `std::map` | sorted array |
+| | O2 (`std::map`) | O3 (sorted array) |
 | --- | ---: | ---: |
-| throughput, ops/s | 4.5M to 6.9M | 1.1M to 1.8M |
-| cancel p99 | 0.68 to 0.81 µs | 8.1 to 9.8 µs |
-| cancel p99.9 | 1.3 to 4.4 µs | 34 to 38 µs |
-| limit p50 | 176 to 217 ns | 190 to 239 ns |
+| throughput, ops/s | 5,687,100 | 5,455,611 |
+| limit p50 / p99 / p99.9, ns | 201.7 / 555.1 / 2,762.1 | 132.7 / 433.6 / 2,722.8 |
+| cancel p50 / p99 / p99.9, ns | 338.5 / 746.9 / 3,041.9 | 304.2 / 572.9 / 2,743.5 |
 
-Allocation is gone and the tail on cancels is roughly ten times worse. The
-median limit order is about the same, so the cost sits in the shifts, not
-in the search.
+The array lowers p50 and p99 for both kinds (limit p50 -34%, limit p99
+-22%, cancel p50 -10%, cancel p99 -23%) and leaves p99.9 unchanged. Batched
+throughput is 4.1% lower. The per-operation passes serialize the pipeline
+with `lfence` and the throughput pass does not, so the two can disagree; the
+cause of this one has not been isolated.
+
+An earlier version of this section reported an unpinned, shared-sandbox A/B
+in which the array looked about ten times worse on cancel p99. The pinned
+run did not reproduce it, and that result is withdrawn: a shared VM cannot
+separate this effect from its own noise.
 
 ## What this does not establish
 
-- Only W1, which is deep. A book with tens of levels moves far less per
-  operation, and the array may well win there. How deep real books are is
-  the question this number can't answer.
-- The numbers above are from a shared sandbox. The pinned-core figures
-  (`tools/run_baseline.sh`, against the committed baseline) are still to be
-  taken, and these should be replaced by them.
+- One run per build. The documented run-to-run spread on this setup is about
+  1.5% at p50 and p99 and 8% at p99.9, so the p50 and p99 gains are outside
+  it and the 4% throughput difference is not.
+- Only W1, which is deep (about 1,000 levels per side). The shifts above
+  cost less than the pointer chasing they replace on this book, and the
+  cost grows with depth, so a much deeper book may behave differently. No
+  other book shape was run.
+- The p99.9 of about 2.7 us did not come from this container: it appears at
+  O2 (see ADR-005) and is unchanged here.
 - The page table is not built, so nothing here says it is faster.
 
 ## Status
 
 (a) was accepted for M1. (b) was built and measured at M5: it removes the
-allocations and regresses W1 tail latency by about an order of magnitude on
-cancels, which is why it is recorded here as a measured candidate and not
-as the answer. (c) avoids the shifting entirely by indexing levels by price
-offset, and that needs a bounded price range: the book would take a price
-band when it is built and reject orders outside it, the way an exchange
-price collar does. That changes what the engine accepts, so it is a spec
-decision (S1) and gets its own ADR. The array stays until then because the
-zero-allocation test needs a container that does not allocate.
+allocations and, on the pinned run, lowers median and p99 latency against
+`std::map` on W1 while costing 4% of batched throughput. It is accepted as
+the container for now. (c) avoids the shifting entirely by indexing levels
+by price offset, and that needs a bounded price range: the book would take a
+price band when it is built and reject orders outside it, the way an
+exchange price collar does. That changes what the engine accepts, so it is a
+spec decision (S1) and gets its own ADR, to be written if a measurement
+shows the shifts matter.
