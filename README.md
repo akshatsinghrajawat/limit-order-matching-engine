@@ -542,9 +542,6 @@ docs/               spec, benchmark methodology, ADR-001 to ADR-010, img/ (gener
 
 Documentation: [`docs/spec.md`](docs/spec.md) (S1 to S8), [`docs/adr/`](docs/adr) (ADR-001 to ADR-010), [`docs/benchmark-methodology.md`](docs/benchmark-methodology.md).
 
-## How this was built
-
-The semantics, the ADRs and the decision to rebuild the project from scratch under a much stricter plan are the author's. The implementation, tests and benchmark harness were written with Claude (Anthropic) as the coding assistant, then reviewed, built, run and committed by the author. That is why the verification layers (independent oracle, mutation testing, golden files, sanitizers, a test that checks the allocation claim) are central to the project and not optional extras.
 
 ## License
 
