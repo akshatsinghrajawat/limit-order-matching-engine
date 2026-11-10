@@ -1,5 +1,6 @@
 // Conformance tests 1-19 plus 8b/8c/12b/14b (docs/spec.md test list), and
-// 12c/12d for the ADR-009 decisions. Plain CHECKs, no framework -- consistent with the project's hand-rolled-tools
+// 12c/12d for the ADR-009 decisions and 14c/14d for the width of the FOK
+// pre-check's sum. Plain CHECKs, no framework -- consistent with the project's hand-rolled-tools
 // approach and the fact there's no oracle yet to diff against (that's M2).
 // This closes out the conformance list from the spec; M2's oracle and
 // differential fuzzer are next.
@@ -12,8 +13,10 @@
 // never accidentally trip self-trade prevention. Test 17 is the sole
 // deliberate exception -- it assigns a matching account across sides to
 // produce a real self-match.
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 
 #include "engine/book.hpp"
 
@@ -242,6 +245,112 @@ static void test14b_fok_pre_check_respects_self_trade_boundary() {
   // all three resting orders completely untouched by the rejected attempt
   CHECK(book.order_at(book.head_at(Side::Sell, 100)).order_id == 1);
   CHECK(book.order_at(book.head_at(Side::Sell, 100)).qty == 5);
+}
+
+// The pre-check adds up the quantity it can reach, and a sum of 32-bit
+// quantities does not fit in 32 bits. Each case here has a total that is
+// exactly right in 64 bits and wrong after wrapping.
+static void test14c_fok_pre_check_sum_is_not_32_bit() {
+  static constexpr Qty kMax = std::numeric_limits<Qty>::max();
+  static constexpr Qty kHalf = Qty{1} << 31;
+
+  {  // one lot short of what the order asks for: rejected, book untouched
+    Book book(16);
+    book.add_limit_order(1, Side::Sell, 100, kMax - 1, kSellAcct);
+    auto r = book.add_limit_order(2, Side::Buy, 100, kMax, kBuyAcct, TimeInForce::FOK);
+    CHECK(r.accepted);
+    CHECK(r.trades.empty());
+    CHECK(r.resting_qty == 0);
+    CHECK(book.snapshot().size() == 1);
+    CHECK(book.order_at(book.head_at(Side::Sell, 100)).qty == kMax - 1);
+    CHECK(book.invariant_violation() == nullptr);
+  }
+  {  // exactly the largest quantity there is
+    Book book(16);
+    book.add_limit_order(1, Side::Sell, 100, kMax, kSellAcct);
+    auto r = book.add_limit_order(2, Side::Buy, 100, kMax, kBuyAcct, TimeInForce::FOK);
+    CHECK(r.trades.size() == 1 && r.trades[0].qty == kMax);
+    CHECK(!book.has_ask());
+    CHECK(book.invariant_violation() == nullptr);
+  }
+  {  // two makers whose quantities add up to 2^32, which wraps to 0
+    Book book(16);
+    book.add_limit_order(1, Side::Sell, 100, kHalf, kSellAcct);
+    book.add_limit_order(2, Side::Sell, 100, kHalf, kSellAcct);
+    auto r = book.add_limit_order(3, Side::Buy, 100, 1, kBuyAcct, TimeInForce::FOK);
+    CHECK(r.trades.size() == 1 && r.trades[0].maker_order_id == 1 && r.trades[0].qty == 1);
+    CHECK(book.snapshot().size() == 2);
+    CHECK(book.order_at(book.head_at(Side::Sell, 100)).qty == kHalf - 1);
+    CHECK(book.invariant_violation() == nullptr);
+  }
+  {  // 2^32 + 5 available across two levels, which wraps to 5, against 7
+    Book book(16);
+    book.add_limit_order(1, Side::Sell, 100, kMax, kSellAcct);
+    book.add_limit_order(2, Side::Sell, 101, 6, kSellAcct);
+    auto r = book.add_limit_order(3, Side::Buy, 101, 7, kBuyAcct, TimeInForce::FOK);
+    CHECK(r.trades.size() == 1 && r.trades[0].maker_order_id == 1 && r.trades[0].qty == 7);
+    CHECK(book.snapshot().size() == 2);
+    CHECK(book.invariant_violation() == nullptr);
+  }
+  {  // three levels of 2^31 and an order for 2^32 - 1: filled across two
+    Book book(16);
+    book.add_limit_order(1, Side::Sell, 100, kHalf, kSellAcct);
+    book.add_limit_order(2, Side::Sell, 101, kHalf, kSellAcct);
+    book.add_limit_order(3, Side::Sell, 102, kHalf, kSellAcct);
+    auto r = book.add_limit_order(4, Side::Buy, 102, kMax, kBuyAcct, TimeInForce::FOK);
+    CHECK(r.trades.size() == 2);
+    CHECK(r.trades[0].maker_order_id == 1 && r.trades[0].qty == kHalf);
+    CHECK(r.trades[1].maker_order_id == 2 && r.trades[1].qty == kHalf - 1);
+    CHECK(book.snapshot().size() == 2);
+    CHECK(book.order_at(book.head_at(Side::Sell, 101)).qty == 1);
+    CHECK(book.order_at(book.head_at(Side::Sell, 102)).qty == kHalf);
+    CHECK(book.invariant_violation() == nullptr);
+  }
+  {  // the same on the other side of the book
+    Book book(16);
+    book.add_limit_order(1, Side::Buy, 100, kHalf, kBuyAcct);
+    book.add_limit_order(2, Side::Buy, 100, kHalf, kBuyAcct);
+    auto r = book.add_limit_order(3, Side::Sell, 100, 1, kSellAcct, TimeInForce::FOK);
+    CHECK(r.trades.size() == 1 && r.trades[0].maker_order_id == 1);
+    CHECK(book.invariant_violation() == nullptr);
+  }
+}
+
+// The self-trade boundary still decides what counts when the quantities are
+// large: liquidity behind the first order of the taker's own account is not
+// available, however much of it there is.
+static void test14d_fok_pre_check_self_trade_boundary_with_wide_quantities() {
+  static constexpr Qty kMax = std::numeric_limits<Qty>::max();
+  static constexpr Qty kHalf = Qty{1} << 31;
+  static constexpr std::uint32_t kSelfAcct = 77;
+
+  {  // exactly the order's quantity sits ahead of the self order: filled
+    Book book(16);
+    book.add_limit_order(1, Side::Sell, 100, kHalf, kSellAcct);
+    book.add_limit_order(2, Side::Sell, 100, kHalf - 1, kSellAcct);
+    book.add_limit_order(3, Side::Sell, 100, 5, kSelfAcct);
+    book.add_limit_order(4, Side::Sell, 100, kHalf, kSellAcct);
+    auto r = book.add_limit_order(5, Side::Buy, 100, kMax, kSelfAcct, TimeInForce::FOK);
+    CHECK(r.trades.size() == 2);
+    CHECK(r.trades[0].qty == kHalf && r.trades[1].qty == kHalf - 1);
+    CHECK(!r.stp_rejected);
+    CHECK(book.snapshot().size() == 2);
+    CHECK(book.order_at(book.head_at(Side::Sell, 100)).order_id == 3);
+    CHECK(book.invariant_violation() == nullptr);
+  }
+  {  // one lot less ahead of it: rejected, nothing touched
+    Book book(16);
+    book.add_limit_order(1, Side::Sell, 100, kHalf, kSellAcct);
+    book.add_limit_order(2, Side::Sell, 100, kHalf - 2, kSellAcct);
+    book.add_limit_order(3, Side::Sell, 100, 5, kSelfAcct);
+    book.add_limit_order(4, Side::Sell, 100, kHalf, kSellAcct);
+    auto r = book.add_limit_order(5, Side::Buy, 100, kMax, kSelfAcct, TimeInForce::FOK);
+    CHECK(r.accepted);
+    CHECK(r.trades.empty());
+    CHECK(book.snapshot().size() == 4);
+    CHECK(book.order_at(book.head_at(Side::Sell, 100)).qty == kHalf);
+    CHECK(book.invariant_violation() == nullptr);
+  }
 }
 
 static void test15_fok_success_fills_atomically() {
@@ -508,6 +617,8 @@ int main() {
   test13_market_order_sweeps_and_cancels_remainder();
   test14_ioc_partial_fill_cancels_remainder();
   test14b_fok_pre_check_respects_self_trade_boundary();
+  test14c_fok_pre_check_sum_is_not_32_bit();
+  test14d_fok_pre_check_self_trade_boundary_with_wide_quantities();
   test15_fok_success_fills_atomically();
   test16_fok_failure_leaves_book_untouched();
   test17_self_trade_prevention();
@@ -515,6 +626,6 @@ int main() {
   test19_pool_exhaustion_is_clean_rejection();
   test_snapshot_reports_priority_order();
   test_invariants_hold_and_detect_corruption();
-  std::printf("conformance tests 1-19 (+8b, 8c, 12b-12d, 14b): all passed\n");
+  std::printf("conformance tests 1-19 (+8b, 8c, 12b-12d, 14b-14d): all passed\n");
   return 0;
 }

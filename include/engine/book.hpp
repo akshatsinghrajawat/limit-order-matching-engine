@@ -92,12 +92,12 @@ class Book {
     if (qty == 0 || id_map_.contains(order_id)) return;
 
     if (tif == TimeInForce::FOK) {
-      Qty available = (side == Side::Buy)
+      std::uint64_t available = (side == Side::Buy)
           ? available_before_self_trade(asks_, price, account,
                 [](Price resting, Price taker) { return resting <= taker; })
           : available_before_self_trade(bids_, price, account,
                 [](Price resting, Price taker) { return resting >= taker; });
-      if (available < qty) {
+      if (available < static_cast<std::uint64_t>(qty)) {
         result.accepted = true;  // valid, well-formed order -- rejected on
         return;                  // liquidity grounds, book untouched (S5)
       }
@@ -386,13 +386,14 @@ class Book {
   // book/price-bound runs out (return what was found) or an order whose
   // account matches `account` is reached (stop and return the running
   // total *without* counting that order, mirroring cross()'s "self-match
-  // stops the sweep, that order is never touched" rule). Read-only: no
+  // stops the sweep, that order is never touched" rule). The sum is 64-bit:
+  // each Qty is 32-bit and a few of them already pass 2^32. Read-only: no
   // trades, no mutation, nothing to unwind if the caller decides to
   // reject.
   template <typename Levels, typename Crosses>
-  Qty available_before_self_trade(const Levels& resting_side, Price limit_price,
-                                   std::uint32_t account, Crosses crosses) const {
-    Qty total = 0;
+  std::uint64_t available_before_self_trade(const Levels& resting_side, Price limit_price,
+                                            std::uint32_t account, Crosses crosses) const {
+    std::uint64_t total = 0;
     for (std::size_t rank = 0; rank < resting_side.size(); ++rank) {
       const Level& level = resting_side.by_rank(rank);
       if (!crosses(level.price, limit_price)) break;

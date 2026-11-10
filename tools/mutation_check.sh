@@ -142,8 +142,11 @@ check fok-precheck-buy-strict 1 \
   '{ return resting <= taker; }' \
   '{ return resting < taker; }'
 check fok-precheck-off-by-one 1 \
-  'if (available < qty)' \
-  'if (available <= qty)'
+  'if (available < static_cast<std::uint64_t>(qty))' \
+  'if (available <= static_cast<std::uint64_t>(qty))'
+check fok-precheck-sum-narrowed 1 \
+  'std::uint64_t total = 0;' \
+  'Qty total = 0;'
 check ioc-rests-residual 1 \
   '(tif == TimeInForce::GTC) && !result.stp_rejected;' \
   '(tif != TimeInForce::FOK) && !result.stp_rejected;'

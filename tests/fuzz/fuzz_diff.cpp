@@ -3,7 +3,11 @@
 // emitted trade, or the resting book fails the run and prints the seed, the
 // operation index and the last operations so the failure can be replayed.
 //
-//   fuzz_diff [seeds=10] [ops_per_seed=20000] [first_seed=1] [stride=1]
+//   fuzz_diff [seeds=10] [ops_per_seed=20000] [first_seed=1] [stride=1] [boundary]
+//
+// The last argument switches the quantity profile: the default draws small
+// quantities, `boundary` mixes in the values where a 32-bit sum or compare
+// differs from a 64-bit one (diff::QtyProfile).
 //
 // Pool capacity cycles through {2, 8, 32, 128} by seed so exhaustion is
 // exercised as often as a deep book. Every operation's result and trades are
@@ -24,6 +28,11 @@ int main(int argc, char** argv) {
   std::uint64_t first = argc > 3 ? std::strtoull(argv[3], nullptr, 10) : 1;
   std::uint64_t stride = argc > 4 ? std::strtoull(argv[4], nullptr, 10) : 1;
   if (stride == 0) stride = 1;
+  const bool boundary = argc > 5 && std::string(argv[5]) == "boundary";
+  if (argc > 5 && !boundary) {
+    std::fprintf(stderr, "fuzz_diff: unknown profile '%s'\n", argv[5]);
+    return 2;
+  }
   static const engine::Index capacities[] = {2, 8, 32, 128};
 
   diff::Stats total;
@@ -31,7 +40,7 @@ int main(int argc, char** argv) {
     std::uint64_t seed = first + static_cast<std::uint64_t>(n);
     engine::Index capacity = capacities[seed % 4];
     diff::Pair pair(capacity);
-    diff::Generator gen(seed);
+    diff::Generator gen(seed, boundary ? diff::QtyProfile::Boundary : diff::QtyProfile::Default);
     diff::Op recent[8];
 
     for (std::uint64_t i = 0; i < ops; ++i) {
@@ -48,8 +57,8 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "  op %llu: %s\n", (unsigned long long)(i + 1 - k),
                      diff::describe(recent[(i + 1 - k) % 8]).c_str());
       }
-      std::fprintf(stderr, "reproduce: fuzz_diff 1 %llu %llu 1\n", (unsigned long long)ops,
-                   (unsigned long long)seed);
+      std::fprintf(stderr, "reproduce: fuzz_diff 1 %llu %llu 1%s\n", (unsigned long long)ops,
+                   (unsigned long long)seed, boundary ? " boundary" : "");
       return 1;
     }
     total.add(pair.stats);
@@ -64,12 +73,18 @@ int main(int argc, char** argv) {
               (unsigned long long)total.modify_ok, (unsigned long long)total.cancel_ok,
               (unsigned long long)total.invalid_rejected, (unsigned long long)total.modify_crossing_rejected);
 
+  if (boundary) std::printf("  profile=boundary fok_wide=%llu\n", (unsigned long long)total.fok_wide);
+
   // A run that never reached a path says nothing about that path.
   if (total.ops >= 10000 &&
       (total.trades == 0 || total.stp == 0 || total.fok_rejected == 0 || total.pool_exhausted == 0 ||
        total.modify_ok == 0 || total.modify_crossing_rejected == 0 || total.cancel_ok == 0 ||
        total.invalid_rejected == 0)) {
     std::fprintf(stderr, "fuzz_diff: a path was never exercised; the run is vacuous\n");
+    return 2;
+  }
+  if (boundary && total.ops >= 10000 && total.fok_wide == 0) {
+    std::fprintf(stderr, "fuzz_diff: no FOK order saw 2^32 lots or more; the boundary run is vacuous\n");
     return 2;
   }
   return 0;

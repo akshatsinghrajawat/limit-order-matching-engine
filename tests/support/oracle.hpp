@@ -96,6 +96,13 @@ class Oracle {
 
   bool has(OrderId id) const { return find(id) != npos; }
 
+  // What a FOK order from `account` could take at `limit` right now. Read by
+  // the harness to count how often the sum passes 2^32; the oracle itself
+  // only uses it inside submit().
+  std::uint64_t fillable(Side taker, Price limit, std::uint32_t account) const {
+    return fillable_before_self_trade(taker, limit, account);
+  }
+
   // Bids best-first then asks best-first, FIFO (seq_no) within a price.
   std::vector<Resting> snapshot() const {
     std::vector<Resting> out = orders_;

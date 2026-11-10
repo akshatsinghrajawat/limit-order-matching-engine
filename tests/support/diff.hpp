@@ -7,8 +7,10 @@
 // Failures are returned as strings rather than asserted so the tests still
 // verify under -DNDEBUG and can print a reproducing seed and the last few
 // operations.
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -69,12 +71,15 @@ inline std::string describe(const Op& op) {
 struct Stats {
   std::uint64_t ops = 0, trades = 0, stp = 0, fok_rejected = 0, pool_exhausted = 0;
   std::uint64_t modify_ok = 0, cancel_ok = 0, invalid_rejected = 0, modify_crossing_rejected = 0;
+  // FOK orders for which the oracle could reach 2^32 lots or more.
+  std::uint64_t fok_wide = 0;
 
   void add(const Stats& o) {
     ops += o.ops; trades += o.trades; stp += o.stp; fok_rejected += o.fok_rejected;
     pool_exhausted += o.pool_exhausted; modify_ok += o.modify_ok; cancel_ok += o.cancel_ok;
     invalid_rejected += o.invalid_rejected;
     modify_crossing_rejected += o.modify_crossing_rejected;
+    fok_wide += o.fok_wide;
   }
 };
 
@@ -94,6 +99,10 @@ class Pair {
     ++stats.ops;
     switch (op.kind) {
       case Kind::Limit:
+        if (op.tif == TimeInForce::FOK && op.qty != 0 && !ref.has(op.id) &&
+            ref.fillable(op.side, op.price, op.account) > std::numeric_limits<Qty>::max()) {
+          ++stats.fok_wide;
+        }
         book.add_limit_order(result, op.id, op.side, op.price, op.qty, op.account, op.tif);
         return compare_add(op, result, ref.add_limit(op.id, op.side, op.price, op.qty, op.account, op.tif));
       case Kind::Market:
@@ -201,6 +210,27 @@ class Pair {
   }
 };
 
+// Which quantities the generator draws. Default is what the seeds in
+// ctest, CI and the golden journal were produced with, and its draws must
+// not change. Boundary mixes in the values where a 32-bit sum or compare
+// behaves differently from a 64-bit one: 1, powers of two and their
+// neighbours, and the top of the range.
+enum class QtyProfile : std::uint8_t { Default, Boundary };
+
+inline std::vector<Qty> boundary_quantities() {
+  constexpr Qty kMax = std::numeric_limits<Qty>::max();
+  std::vector<Qty> v = {1, kMax - 1, kMax};
+  for (int k = 1; k < 32; ++k) {
+    const Qty p = Qty{1} << k;
+    v.push_back(p - 1);
+    v.push_back(p);
+    v.push_back(p + 1);
+  }
+  std::sort(v.begin(), v.end());
+  v.erase(std::unique(v.begin(), v.end()), v.end());
+  return v;
+}
+
 // Random operation stream. Prices sit in a narrow band so levels collide
 // and orders cross constantly; four accounts make self-trades common; ids
 // are mostly fresh, sometimes reused (duplicates, reuse after a fill), and
@@ -208,7 +238,10 @@ class Pair {
 // already gone.
 class Generator {
  public:
-  explicit Generator(std::uint64_t seed) : rng_(seed) {}
+  explicit Generator(std::uint64_t seed, QtyProfile profile = QtyProfile::Default)
+      : rng_(seed), profile_(profile) {
+    if (profile_ == QtyProfile::Boundary) boundary_ = boundary_quantities();
+  }
 
   Op next() {
     Op op;
@@ -222,7 +255,7 @@ class Generator {
       if (op.kind == Kind::Market) op.tif = TimeInForce::IOC;
       op.id = fresh_or_reused();
       op.price = pick_price();
-      op.qty = 1 + static_cast<Qty>(rng_.below(8));
+      op.qty = quantity(8);
       remember(op.id, op.price);
     } else if (r < 79) {
       op.kind = Kind::Cancel;
@@ -232,7 +265,7 @@ class Generator {
       std::size_t k = pick_known();
       op.id = issued_.empty() ? 0 : issued_[k];
       op.price = (!issued_.empty() && rng_.below(10) < 4) ? price_[k] : pick_price();
-      op.qty = 1 + static_cast<Qty>(rng_.below(10));
+      op.qty = quantity(10);
       if (!issued_.empty()) price_[k] = op.price;
     } else {
       std::uint64_t which = rng_.below(3);
@@ -250,13 +283,22 @@ class Generator {
         op.kind = Kind::Limit;
         op.id = issued_.empty() ? 1 : issued_[pick_known()];
         op.price = pick_price();
-        op.qty = 1 + static_cast<Qty>(rng_.below(8));
+        op.qty = quantity(8);
       }
     }
     return op;
   }
 
  private:
+  // A quantity of 1..span from one draw, which is all the Default profile
+  // does. Boundary replaces half of them with a value from boundary_.
+  Qty quantity(std::uint64_t span) {
+    if (profile_ == QtyProfile::Boundary && rng_.below(100) < 50) {
+      return boundary_[static_cast<std::size_t>(rng_.below(boundary_.size()))];
+    }
+    return 1 + static_cast<Qty>(rng_.below(span));
+  }
+
   Price pick_price() {
     if (rng_.below(100) < 5) return 80 + static_cast<Price>(rng_.below(41));
     return 95 + static_cast<Price>(rng_.below(11));
@@ -283,6 +325,8 @@ class Generator {
   }
 
   Rng rng_;
+  QtyProfile profile_;
+  std::vector<Qty> boundary_;
   OrderId next_id_ = 0;
   std::vector<OrderId> issued_;
   std::vector<Price> price_;
