@@ -47,7 +47,12 @@ jobs:
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
-        run: cmake --build build --parallel --target fuzz_diff exhaustive_diff
+        run: cmake --build build --parallel --target test_basic fuzz_diff exhaustive_diff
+
+      # Release defines NDEBUG, so this is the run that shows the checks
+      # still execute with asserts compiled out.
+      - name: Conformance suite (Release, ASan/UBSan)
+        run: ./build/test_basic
 
       - name: Differential fuzz, 100 seeds x 1M ops
         run: ./build/fuzz_diff 100 1000000 1 32
