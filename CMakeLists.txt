@@ -12,7 +12,10 @@ option(ENABLE_SANITIZERS "Build with -fsanitize=address,undefined" ON)
 option(BUILD_TESTS "Build the test suite" ON)
 
 if(ENABLE_SANITIZERS)
-  add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+  # UBSan reports and keeps going unless told otherwise, which leaves a
+  # diagnostic in a log that nothing fails on.
+  add_compile_options(-fsanitize=address,undefined -fno-sanitize-recover=all
+                      -fno-omit-frame-pointer)
   add_link_options(-fsanitize=address,undefined)
 endif()
 
@@ -123,6 +126,15 @@ if(BUILD_TESTS)
   add_executable(test_price_levels tests/unit/test_price_levels.cpp)
   target_link_libraries(test_price_levels PRIVATE test_support alloc_counter)
   add_test(NAME unit_price_levels COMMAND test_price_levels)
+
+  # Undefined behavior has to end the process. The probe overflows an int and
+  # passes only if the sanitized build dies; without sanitizers there is
+  # nothing to detect it.
+  if(ENABLE_SANITIZERS)
+    add_executable(test_ubsan_death tests/unit/test_ubsan_death.cpp)
+    add_test(NAME ubsan_aborts COMMAND test_ubsan_death)
+    set_tests_properties(ubsan_aborts PROPERTIES WILL_FAIL TRUE)
+  endif()
 
   # Not tests, run them by hand. See the usage comment in each source for
   # the build they need to produce numbers worth keeping.

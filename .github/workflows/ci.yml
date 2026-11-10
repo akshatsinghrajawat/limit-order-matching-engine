@@ -11,6 +11,10 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+  ASAN_OPTIONS: abort_on_error=1:detect_leaks=1
+
 jobs:
   conformance:
     runs-on: ubuntu-26.04
