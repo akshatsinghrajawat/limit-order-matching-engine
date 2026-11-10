@@ -106,7 +106,9 @@ ordering truth in the system. Every command takes the next number, starting
 at 0, whether or not it changes the book, so a command's `seq_no` is its
 position in the input. An order's `seq_no` is that of the command that
 rested it or last repositioned it, and the trades a command makes carry its
-number (ADR-009). (The same principle is why the journal, not
+number (ADR-009). A command whose kind, side or time in force is outside the
+defined values is invalid: it is not journaled and takes no number
+(ADR-011). (The same principle is why the journal, not
 the in-memory event vector, is the sole replay authority — see ADR-006.)
 
 ## S7 — Determinism invariants (hard, test-enforced)
