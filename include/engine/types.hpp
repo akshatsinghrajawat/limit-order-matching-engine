@@ -16,6 +16,10 @@ inline constexpr Index kNilIndex = std::numeric_limits<Index>::max();
 
 enum class Side : std::uint8_t { Buy, Sell };
 
+// Whether the byte holds a side that exists. journal::Reader accepts the same
+// two values and no others (ADR-011).
+inline bool valid(Side s) { return s == Side::Buy || s == Side::Sell; }
+
 // S5. GTC (default) rests any residual. IOC and FOK never rest -- an
 // unfilled remainder is cancelled, not left in the book. FOK additionally
 // pre-checks available qty and rejects the whole order, untouched, if it

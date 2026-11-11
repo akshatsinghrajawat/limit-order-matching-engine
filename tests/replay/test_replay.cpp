@@ -193,6 +193,7 @@ static void an_invalid_command_in_the_stream_does_not_cost_the_commands_after_it
   };
   Command bad;
   bad.kind = static_cast<CommandKind>(9);
+  const Command bad_side = limit_command(9, static_cast<Side>(2), 100, 5, 1);
 
   {
     journal::Writer w;
@@ -200,7 +201,7 @@ static void an_invalid_command_in_the_stream_does_not_cost_the_commands_after_it
     CHECK(w.append(accepted[0]) == journal::AppendStatus::Ok);
     CHECK(w.append(bad) == journal::AppendStatus::Invalid);
     CHECK(w.append(accepted[1]) == journal::AppendStatus::Ok);
-    CHECK(w.append(bad) == journal::AppendStatus::Invalid);
+    CHECK(w.append(bad_side) == journal::AppendStatus::Invalid);
     CHECK(w.append(accepted[2]) == journal::AppendStatus::Ok);
   }
   std::vector<std::uint8_t> bytes;
@@ -222,7 +223,19 @@ static void an_invalid_command_in_the_stream_does_not_cost_the_commands_after_it
 // stale result would show: the outcome would claim success and the trade
 // would be logged again.
 static void apply_refuses_a_command_that_is_not_valid() {
+  std::vector<Command> refused;
   for (const std::uint8_t kind : {0, 5, 9, 255}) {
+    Command c;
+    c.kind = static_cast<CommandKind>(kind);
+    c.id = 99;
+    refused.push_back(c);
+  }
+  for (const std::uint8_t side : {2, 255}) {
+    refused.push_back(limit_command(99, static_cast<Side>(side), 100, 5, 1));
+    refused.push_back(limit_command(99, static_cast<Side>(side), 90, 5, 1));
+    refused.push_back(market_command(99, static_cast<Side>(side), 5, 1));
+  }
+  for (const Command& bad : refused) {
     Book book(kCapacity);
     Book::AddResult scratch;
     std::string log;
@@ -241,15 +254,12 @@ static void apply_refuses_a_command_that_is_not_valid() {
 
     const std::string book_before = replay::serialize_book(book);
     const std::string log_before = log;
-    Command bad;
-    bad.kind = static_cast<CommandKind>(kind);
-    bad.id = 99;
 
     const replay::Outcome o = replay::apply(book, bad, scratch);
     CHECK(!o.ok && o.resting_qty == 0 && !o.stp_rejected && !o.pool_exhausted);
     CHECK(scratch.trades.empty());
     replay::append_events(log, 4, bad, o, scratch.trades);
-    CHECK(log == log_before);
+    if (!valid(bad.kind)) CHECK(log == log_before);  // an unknown kind has no log line at all
     CHECK(replay::serialize_book(book) == book_before);
     CHECK(book.invariant_violation() == nullptr);
 
@@ -265,7 +275,25 @@ static void apply_refuses_a_command_that_is_not_valid() {
   }
 }
 
+// A command that is not valid is not normally logged, but if it is, its side
+// has to be printed as what it is and not as a sell.
+static void the_log_says_when_a_side_does_not_exist() {
+  const replay::Outcome none;
+  const std::vector<Trade> no_trades;
+  std::string log;
+  replay::append_events(log, 0, limit_command(1, static_cast<Side>(2), 100, 5, 1), none, no_trades);
+  replay::append_events(log, 1, market_command(2, static_cast<Side>(255), 5, 1), none, no_trades);
+  replay::append_events(log, 2, limit_command(3, Side::Buy, 100, 5, 1), none, no_trades);
+  replay::append_events(log, 3, market_command(4, Side::Sell, 5, 1), none, no_trades);
+  CHECK(log.find("limit id=1 side=invalid(2) ") != std::string::npos);
+  CHECK(log.find("market id=2 side=invalid(255) ") != std::string::npos);
+  CHECK(log.find("limit id=3 side=buy ") != std::string::npos);
+  CHECK(log.find("market id=4 side=sell ") != std::string::npos);
+  CHECK(log.find("side=sell") == log.rfind("side=sell"));  // only the real sell
+}
+
 int main() {
+  the_log_says_when_a_side_does_not_exist();
   an_invalid_command_in_the_stream_does_not_cost_the_commands_after_it();
   apply_refuses_a_command_that_is_not_valid();
   replay_twice_is_byte_identical();

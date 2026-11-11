@@ -88,6 +88,7 @@ class Book {
                         std::uint32_t account,
                         TimeInForce tif = TimeInForce::GTC) {
     result.reset();
+    if (!valid(side)) return;  // not a command, so no seq_no (ADR-011)
     const SeqNo seq = next_seq_++;
     if (qty == 0 || id_map_.contains(order_id)) return;
 
@@ -146,6 +147,7 @@ class Book {
   void add_market_order(AddResult& result, OrderId order_id, Side side, Qty qty,
                          std::uint32_t account) {
     result.reset();
+    if (!valid(side)) return;  // not a command, so no seq_no (ADR-011)
     const SeqNo seq = next_seq_++;
     if (qty == 0 || id_map_.contains(order_id)) return;
 

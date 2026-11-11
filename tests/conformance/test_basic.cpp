@@ -1,7 +1,8 @@
 // Conformance tests 1-19 plus 8b/8c/12b/14b (docs/spec.md test list), and
-// 12c/12d for the ADR-009 decisions and 14c/14d for the width of the FOK
-// pre-check's sum. Plain CHECKs, no framework -- consistent with the project's hand-rolled-tools
-// approach and the fact there's no oracle yet to diff against (that's M2).
+// 12c/12d for the ADR-009 decisions, 14c/14d for the width of the FOK
+// pre-check's sum and 18b for ADR-011. Plain CHECKs, no framework --
+// consistent with the project's hand-rolled-tools approach and the fact
+// there's no oracle yet to diff against (that's M2).
 // This closes out the conformance list from the spec; M2's oracle and
 // differential fuzzer are next.
 //
@@ -430,6 +431,67 @@ static void test18_invalid_input_rejected_at_ingress() {
   CHECK(book.order_at(book.head_at(Side::Buy, 100)).qty == 5);  // untouched
 }
 
+static bool same_book(const Book& a, const Book& b) {
+  const auto x = a.snapshot();
+  const auto y = b.snapshot();
+  if (x.size() != y.size()) return false;
+  for (std::size_t i = 0; i < x.size(); ++i) {
+    if (x[i].side != y[i].side || x[i].price != y[i].price || x[i].order_id != y[i].order_id ||
+        x[i].qty != y[i].qty || x[i].account != y[i].account || x[i].seq_no != y[i].seq_no) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// A side that is neither Buy nor Sell is not a command (ADR-011): the book
+// refuses it before the command takes a seq_no and changes nothing. Every
+// case runs on one book and on a control that is never sent the bad commands,
+// and the two must stay identical, seq_no included.
+static void test18b_invalid_side_takes_no_seq_no_and_changes_nothing() {
+  for (const std::uint8_t byte : {2, 255}) {
+    const Side bad = static_cast<Side>(byte);
+    Book book(16);
+    Book control(16);
+    for (Book* b : {&book, &control}) {
+      b->add_limit_order(1, Side::Sell, 100, 5, kSellAcct);
+      b->add_limit_order(2, Side::Buy, 90, 5, kBuyAcct);
+    }
+
+    const auto refused = [](const Book::AddResult& r) {
+      return !r.accepted && r.trades.empty() && r.resting_qty == 0 && !r.pool_exhausted && !r.stp_rejected;
+    };
+    CHECK(refused(book.add_limit_order(3, bad, 100, 5, kBuyAcct)));    // marketable against the ask
+    CHECK(refused(book.add_limit_order(4, bad, 90, 5, kSellAcct)));    // marketable against the bid
+    CHECK(refused(book.add_limit_order(5, bad, 150, 5, kBuyAcct)));    // marketable against neither
+    CHECK(refused(book.add_limit_order(6, bad, 100, 5, kBuyAcct, TimeInForce::IOC)));
+    CHECK(refused(book.add_limit_order(7, bad, 100, 5, kBuyAcct, TimeInForce::FOK)));
+    CHECK(refused(book.add_market_order(8, bad, 5, kBuyAcct)));
+    CHECK(refused(book.add_market_order(9, bad, 5, kSellAcct)));
+
+    CHECK(same_book(book, control));
+    CHECK(book.invariant_violation() == nullptr);
+
+    // None of them registered an id, so one of them can be used for a real order.
+    auto r = book.add_limit_order(3, Side::Buy, 95, 1, kBuyAcct);
+    auto rc = control.add_limit_order(3, Side::Buy, 95, 1, kBuyAcct);
+    CHECK(r.accepted && rc.accepted && r.resting_qty == 1);
+
+    // The next commands get the numbers they would have had without the bad ones.
+    r = book.add_limit_order(10, Side::Buy, 100, 3, kBuyAcct);
+    rc = control.add_limit_order(10, Side::Buy, 100, 3, kBuyAcct);
+    CHECK(r.trades.size() == 1 && rc.trades.size() == 1);
+    CHECK(r.trades[0].seq_no == rc.trades[0].seq_no && r.trades[0].trade_id == rc.trades[0].trade_id);
+    r = book.add_market_order(11, Side::Sell, 2, kSellAcct);
+    rc = control.add_market_order(11, Side::Sell, 2, kSellAcct);
+    CHECK(r.trades.size() == rc.trades.size() && r.trades[0].seq_no == rc.trades[0].seq_no);
+    book.add_limit_order(12, Side::Buy, 80, 2, kBuyAcct);
+    control.add_limit_order(12, Side::Buy, 80, 2, kBuyAcct);
+    CHECK(same_book(book, control));
+    CHECK(book.invariant_violation() == nullptr);
+  }
+}
+
 static void test19_pool_exhaustion_is_clean_rejection() {
   Book book(2);  // tiny pool -- exactly 2 slots, deliberately tight
   auto r1 = book.add_limit_order(1, Side::Buy, 100, 5, kBuyAcct);
@@ -623,9 +685,10 @@ int main() {
   test16_fok_failure_leaves_book_untouched();
   test17_self_trade_prevention();
   test18_invalid_input_rejected_at_ingress();
+  test18b_invalid_side_takes_no_seq_no_and_changes_nothing();
   test19_pool_exhaustion_is_clean_rejection();
   test_snapshot_reports_priority_order();
   test_invariants_hold_and_detect_corruption();
-  std::printf("conformance tests 1-19 (+8b, 8c, 12b-12d, 14b-14d): all passed\n");
+  std::printf("conformance tests 1-19 (+8b, 8c, 12b-12d, 14b-14d, 18b): all passed\n");
   return 0;
 }

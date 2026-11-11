@@ -41,8 +41,14 @@ struct Command {
 };
 
 // Whether the journal can store the command and read it back unchanged
-// (ADR-011). Only the kind is checked so far.
-inline bool valid(const Command& c) { return valid(c.kind); }
+// (ADR-011). A limit or market order is checked on its side; a cancel and a
+// modify have no side in their records, so whatever the field holds is never
+// written and never read.
+inline bool valid(const Command& c) {
+  if (!valid(c.kind)) return false;
+  if (c.kind == CommandKind::Limit || c.kind == CommandKind::Market) return valid(c.side);
+  return true;
+}
 
 inline Command limit_command(OrderId id, Side side, Price price, Qty qty, std::uint32_t account,
                              TimeInForce tif = TimeInForce::GTC) {

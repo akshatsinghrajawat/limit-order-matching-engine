@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Checks that the test suite notices when include/engine/book.hpp,
 # include/engine/id_map.hpp, include/engine/price_levels.hpp,
-# include/engine/command.hpp, include/engine/journal.hpp or
-# include/engine/replay.hpp is wrong.
+# include/engine/types.hpp, include/engine/command.hpp,
+# include/engine/journal.hpp or include/engine/replay.hpp is wrong.
 #
 # Each mutant below makes one small change to a copy of one header, rebuilds,
 # and runs ctest. A mutant is killed if the build succeeds and some test
@@ -225,6 +225,13 @@ check result-reset-drops-capacity 1 \
   'trades.clear(); trades.shrink_to_fit();'
 
 # The order id lookup (ADR-005)
+check book-limit-bad-side-accepted 1 \
+  'if (!valid(side)) return;' \
+  ';'
+check book-market-bad-side-accepted 2 \
+  'if (!valid(side)) return;' \
+  ';'
+
 use_target include/engine/id_map.hpp
 check idmap-table-too-small 1 \
   'while (slots < 2 * static_cast<std::size_t>(max_entries)) slots *= 2;' \
@@ -370,6 +377,14 @@ check journal-append-io-error-reported-as-ok 1 \
   '? AppendStatus::Ok : AppendStatus::IoError;' \
   '? AppendStatus::Ok : AppendStatus::Ok;'
 
+use_target include/engine/types.hpp
+check types-sell-not-a-side 1 \
+  'return s == Side::Buy || s == Side::Sell;' \
+  'return s == Side::Buy;'
+check types-third-side-valid 1 \
+  'return s == Side::Buy || s == Side::Sell;' \
+  'return s == Side::Buy || s == Side::Sell || s == static_cast<Side>(2);'
+
 use_target include/engine/command.hpp
 check command-limit-kind-not-valid 1 \
   'case CommandKind::Limit:' \
@@ -378,8 +393,17 @@ check command-fifth-kind-valid 1 \
   'case CommandKind::Modify:' \
   'case static_cast<CommandKind>(5):'
 check command-valid-ignores-kind 1 \
-  'return valid(c.kind);' \
+  'if (!valid(c.kind)) return false;' \
+  ';'
+check command-valid-ignores-side 1 \
+  'return valid(c.side);' \
   'return true;'
+check command-cancel-side-checked 1 \
+  'c.kind == CommandKind::Market) return valid(c.side);' \
+  'c.kind != CommandKind::Limit) return valid(c.side);'
+check command-market-side-unchecked 1 \
+  'c.kind == CommandKind::Limit || c.kind == CommandKind::Market' \
+  'c.kind == CommandKind::Limit'
 
 # Replay and the event log (ADR-006). The golden files are what pin these:
 # live and replayed runs share apply() and would agree on a wrong one.
@@ -429,6 +453,9 @@ check replay-book-sides-swapped 1 \
 check replay-bad-header-ignored 1 \
   'if (out.stop != journal::Status::Ok) return false;' \
   ';'
+check replay-bad-side-printed-as-sell 1 \
+  'if (side == Side::Sell) return "sell";' \
+  'return "sell";'
 check replay-invalid-command-applied 1 \
   'if (!valid(c)) {' \
   'if (false) {'

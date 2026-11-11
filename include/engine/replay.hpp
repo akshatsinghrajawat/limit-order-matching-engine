@@ -77,6 +77,14 @@ inline void line(std::string& out, const char* fmt, ...) {
 inline unsigned long long u(std::uint64_t v) { return v; }
 inline long long s(std::int64_t v) { return v; }
 
+// The side as the log prints it. A value that is neither side is printed as
+// such, not as a sell.
+inline std::string side_label(Side side) {
+  if (side == Side::Buy) return "buy";
+  if (side == Side::Sell) return "sell";
+  return "invalid(" + std::to_string(static_cast<unsigned>(side)) + ")";
+}
+
 }  // namespace detail
 
 // One line for the command and its outcome, then one for each trade it made.
@@ -85,18 +93,19 @@ inline void append_events(std::string& log, std::size_t position, const Command&
                           const std::vector<Trade>& trades) {
   using detail::line;
   using detail::s;
+  using detail::side_label;
   using detail::u;
   const unsigned long long pos = position;
   switch (c.kind) {
     case CommandKind::Limit:
       line(log, "#%llu limit id=%llu side=%s price=%lld qty=%u account=%u tif=%s ok=%d rest=%u stp=%d full=%d", pos,
-           u(c.id), c.side == Side::Buy ? "buy" : "sell", s(c.price), c.qty, c.account,
+           u(c.id), side_label(c.side).c_str(), s(c.price), c.qty, c.account,
            c.tif == TimeInForce::GTC ? "gtc" : c.tif == TimeInForce::IOC ? "ioc" : "fok", o.ok,
            o.resting_qty, o.stp_rejected, o.pool_exhausted);
       break;
     case CommandKind::Market:
       line(log, "#%llu market id=%llu side=%s qty=%u account=%u ok=%d rest=%u stp=%d full=%d", pos, u(c.id),
-           c.side == Side::Buy ? "buy" : "sell", c.qty, c.account, o.ok, o.resting_qty, o.stp_rejected,
+           side_label(c.side).c_str(), c.qty, c.account, o.ok, o.resting_qty, o.stp_rejected,
            o.pool_exhausted);
       break;
     case CommandKind::Cancel:

@@ -400,6 +400,68 @@ static void kind_validity_agrees_with_the_reader() {
   CHECK(valid_kinds == 4);
 }
 
+// The side byte of a limit or market record: the validity check and the
+// reader are two statements of one rule, so for every possible byte the
+// reader says BadField exactly when valid() says the side does not exist.
+static void side_validity_agrees_with_the_reader() {
+  int valid_sides = 0;
+  for (int byte = 0; byte < 256; ++byte) {
+    const bool ok = valid(static_cast<Side>(byte));
+    valid_sides += ok;
+    for (const Command& c : {limit_command(1, Side::Buy, 100, 5, 1), market_command(1, Side::Buy, 5, 1)}) {
+      auto b = encode_file(kCapacity, {c});
+      b[journal::kHeaderSize + 9] = static_cast<std::uint8_t>(byte);
+      reseal(b, journal::kHeaderSize, b.size() - journal::kHeaderSize - 4);
+      journal::Reader r(b.data(), b.size());
+      CHECK(r.open() == Status::Ok);
+      Command out;
+      const Status s = r.next(out);
+      CHECK((s == Status::BadField) == !ok);
+      if (ok) CHECK(s == Status::Ok && static_cast<int>(out.side) == byte);
+    }
+  }
+  CHECK(valid_sides == 2);
+}
+
+// A limit or market order with a side that does not exist is not encoded and
+// not appended. A cancel and a modify have no side in their records, so
+// whatever their side field holds is never looked at.
+static void a_side_that_does_not_exist_is_refused_by_the_writer() {
+  const char* with = "journal_side_with.bin";
+  const char* without = "journal_side_without.bin";
+  {
+    journal::Writer a, b;
+    CHECK(a.open(with, kCapacity) && b.open(without, kCapacity));
+    for (const std::uint8_t byte : {2, 255}) {
+      const Side bad = static_cast<Side>(byte);
+      for (const Command& c : {limit_command(7, bad, 100, 5, 1), market_command(8, bad, 5, 1)}) {
+        CHECK(!valid(c));
+        std::uint8_t rec[journal::kMaxRecordSize];
+        std::memset(rec, 0xAA, sizeof rec);
+        CHECK(journal::encode(c, rec) == 0);
+        for (const std::uint8_t x : rec) CHECK(x == 0xAA);
+        CHECK(a.append(c) == AppendStatus::Invalid);
+      }
+      Command cancel = cancel_command(1);
+      Command modify = modify_command(1, 100, 5);
+      cancel.side = modify.side = bad;
+      CHECK(valid(cancel) && valid(modify));
+      std::uint8_t with_side[journal::kMaxRecordSize], plain[journal::kMaxRecordSize];
+      const std::size_t n = journal::encode(cancel, with_side);
+      CHECK(n == journal::encode(cancel_command(1), plain) && std::memcmp(with_side, plain, n) == 0);
+      const std::size_t m = journal::encode(modify, with_side);
+      CHECK(m == journal::encode(modify_command(1, 100, 5), plain) && std::memcmp(with_side, plain, m) == 0);
+    }
+    CHECK(a.append(limit_command(1, Side::Buy, 100, 5, 1)) == AppendStatus::Ok);
+    CHECK(b.append(limit_command(1, Side::Buy, 100, 5, 1)) == AppendStatus::Ok);
+  }
+  std::vector<std::uint8_t> x, y;
+  CHECK(journal::load(with, x) && journal::load(without, y));
+  CHECK(x == y);
+  std::remove(with);
+  std::remove(without);
+}
+
 // A refused command leaves no trace: the file is byte for byte what it would
 // have been without it, and the writer carries on.
 static void an_invalid_command_leaves_the_file_alone() {
@@ -481,6 +543,8 @@ int main() {
   every_command_kind_is_valid_and_round_trips();
   invalid_kinds_are_not_encoded();
   kind_validity_agrees_with_the_reader();
+  side_validity_agrees_with_the_reader();
+  a_side_that_does_not_exist_is_refused_by_the_writer();
   an_invalid_command_leaves_the_file_alone();
   a_writer_that_is_not_open_is_unusable_but_reports_invalid();
   a_failed_write_is_an_io_error_and_then_the_writer_is_unusable();
