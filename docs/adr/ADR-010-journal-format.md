@@ -99,3 +99,31 @@ project does not claim to handle.
 Accepted. The replay driver and the golden files (tests 22 and 23) and the
 kill-and-recover test come next and build on this format; ADR-006 will gain a
 section when replay lands.
+
+## Addendum, 2026-11-11: what `append` reports
+
+`Writer::append` returns an `AppendStatus` instead of a `bool`, and the
+"append succeeded" in **Writing** above means `Ok`:
+
+| status     | meaning                                                       | writer afterwards |
+| ---------- | ------------------------------------------------------------- | ----------------- |
+| `Ok`       | written and flushed to the operating system                   | usable            |
+| `Invalid`  | not a valid command; nothing written                          | unchanged         |
+| `IoError`  | write or flush failed; what reached the file is unknown       | unusable          |
+| `Unusable` | writer not open, or an earlier append failed; nothing written | unusable          |
+
+The checks run in that order, so a command that is not valid is `Invalid`
+whatever state the writer is in. `encode` writes nothing and returns 0 for
+such a command. ADR-011 has the reasons and the full rule; at this point only
+the kind is checked, and the side and time in force follow.
+
+Before this, a command with a kind outside 1 to 4 was written as a 13-byte
+record under a good checksum. The reader stopped there with `BadKind`, so
+every command acknowledged after it was lost on replay, and `append` had
+returned true for all of them. The reader is unchanged: `BadKind` now means
+damaged bytes, never something the writer produced.
+
+`/dev/full` fails the header flush, so `open` returns false and `append` is
+`Unusable`; it cannot show `IoError`. The test for that lowers the file size
+limit to leave room for the header and part of one record, so `open` works
+and the first record fails. It is skipped where `setrlimit` is missing.

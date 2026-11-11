@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Checks that the test suite notices when include/engine/book.hpp,
-# include/engine/id_map.hpp, include/engine/price_levels.hpp or
-# include/engine/journal.hpp or include/engine/replay.hpp is wrong.
+# include/engine/id_map.hpp, include/engine/price_levels.hpp,
+# include/engine/command.hpp, include/engine/journal.hpp or
+# include/engine/replay.hpp is wrong.
 #
 # Each mutant below makes one small change to a copy of one header, rebuilds,
 # and runs ctest. A mutant is killed if the build succeeds and some test
@@ -351,6 +352,35 @@ check journal-writer-skips-header 1 \
   'return write(header, kHeaderSize);' \
   'return true;'
 
+# Which commands the journal accepts (ADR-011). The precedence mutant keeps
+# the Invalid check but lets a writer that cannot write answer first.
+check journal-encode-writes-invalid-command 1 \
+  'if (!valid(c)) return 0;' \
+  ';'
+check journal-append-invalid-unchecked 1 \
+  'if (!valid(c)) return AppendStatus::Invalid;' \
+  ';'
+check journal-append-unusable-beats-invalid 1 \
+  'if (!valid(c)) return AppendStatus::Invalid;' \
+  'if (!valid(c) && file_ != nullptr && !failed_) return AppendStatus::Invalid;'
+check journal-append-unusable-unchecked 1 \
+  'if (file_ == nullptr || failed_) return AppendStatus::Unusable;' \
+  ';'
+check journal-append-io-error-reported-as-ok 1 \
+  '? AppendStatus::Ok : AppendStatus::IoError;' \
+  '? AppendStatus::Ok : AppendStatus::Ok;'
+
+use_target include/engine/command.hpp
+check command-limit-kind-not-valid 1 \
+  'case CommandKind::Limit:' \
+  'case static_cast<CommandKind>(0):'
+check command-fifth-kind-valid 1 \
+  'case CommandKind::Modify:' \
+  'case static_cast<CommandKind>(5):'
+check command-valid-ignores-kind 1 \
+  'return valid(c.kind);' \
+  'return true;'
+
 # Replay and the event log (ADR-006). The golden files are what pin these:
 # live and replayed runs share apply() and would agree on a wrong one.
 use_target include/engine/replay.hpp
@@ -398,6 +428,12 @@ check replay-book-sides-swapped 1 \
   'o.side == Side::Buy ? "ask" : "bid"'
 check replay-bad-header-ignored 1 \
   'if (out.stop != journal::Status::Ok) return false;' \
+  ';'
+check replay-invalid-command-applied 1 \
+  'if (!valid(c)) {' \
+  'if (false) {'
+check replay-invalid-command-keeps-trades 1 \
+  'scratch.reset();' \
   ';'
 
 echo

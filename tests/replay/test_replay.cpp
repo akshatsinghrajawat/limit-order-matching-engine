@@ -180,7 +180,94 @@ static void replay_uses_the_pool_capacity_in_the_header() {
   CHECK(a.log != b.log);
 }
 
+// A command the journal cannot hold is refused by the writer and never
+// reaches the file, so a journal written around it replays every command that
+// was accepted. Before this, the bad record was written, the reader stopped at
+// it, and everything acknowledged after it was lost.
+static void an_invalid_command_in_the_stream_does_not_cost_the_commands_after_it() {
+  const char* path = "replay_invalid_test.bin";
+  const std::vector<Command> accepted = {
+      limit_command(1, Side::Sell, 100, 5, 1),
+      limit_command(2, Side::Buy, 100, 3, 2),
+      cancel_command(1),
+  };
+  Command bad;
+  bad.kind = static_cast<CommandKind>(9);
+
+  {
+    journal::Writer w;
+    CHECK(w.open(path, kCapacity));
+    CHECK(w.append(accepted[0]) == journal::AppendStatus::Ok);
+    CHECK(w.append(bad) == journal::AppendStatus::Invalid);
+    CHECK(w.append(accepted[1]) == journal::AppendStatus::Ok);
+    CHECK(w.append(bad) == journal::AppendStatus::Invalid);
+    CHECK(w.append(accepted[2]) == journal::AppendStatus::Ok);
+  }
+  std::vector<std::uint8_t> bytes;
+  CHECK(journal::load(path, bytes));
+  std::remove(path);
+
+  replay::Replayed r;
+  CHECK(replay::replay(bytes.data(), bytes.size(), r));
+  CHECK(r.commands == accepted.size());
+  CHECK(r.stop == Status::End);
+  CHECK(r.valid_bytes == bytes.size());
+
+  const Live live = run_live(accepted);
+  CHECK(r.log == live.log);
+  CHECK(r.book == live.book_after.back());
+}
+
+// apply() on a command that is not valid. The previous command traded, so a
+// stale result would show: the outcome would claim success and the trade
+// would be logged again.
+static void apply_refuses_a_command_that_is_not_valid() {
+  for (const std::uint8_t kind : {0, 5, 9, 255}) {
+    Book book(kCapacity);
+    Book::AddResult scratch;
+    std::string log;
+    const std::vector<Command> before = {
+        limit_command(1, Side::Sell, 100, 5, 1),
+        limit_command(2, Side::Buy, 100, 5, 2),  // trades with order 1
+        limit_command(3, Side::Buy, 90, 4, 2),
+    };
+    for (std::size_t i = 0; i < before.size(); ++i) {
+      const replay::Outcome o = replay::apply(book, before[i], scratch);
+      replay::append_events(log, i, before[i], o, scratch.trades);
+    }
+    CHECK(scratch.trades.empty());  // the last command rested and did not trade
+    const replay::Outcome traded = replay::apply(book, limit_command(4, Side::Sell, 90, 1, 1), scratch);
+    CHECK(traded.ok && scratch.trades.size() == 1);
+
+    const std::string book_before = replay::serialize_book(book);
+    const std::string log_before = log;
+    Command bad;
+    bad.kind = static_cast<CommandKind>(kind);
+    bad.id = 99;
+
+    const replay::Outcome o = replay::apply(book, bad, scratch);
+    CHECK(!o.ok && o.resting_qty == 0 && !o.stp_rejected && !o.pool_exhausted);
+    CHECK(scratch.trades.empty());
+    replay::append_events(log, 4, bad, o, scratch.trades);
+    CHECK(log == log_before);
+    CHECK(replay::serialize_book(book) == book_before);
+    CHECK(book.invariant_violation() == nullptr);
+
+    // The refused command took no sequence number: the next one rests with
+    // the number the refused one would have had.
+    const replay::Outcome next = replay::apply(book, limit_command(5, Side::Buy, 80, 2, 2), scratch);
+    CHECK(next.ok);
+    SeqNo seq = 0;
+    for (const auto& resting : book.snapshot()) {
+      if (resting.order_id == 5) seq = resting.seq_no;
+    }
+    CHECK(seq == 4);
+  }
+}
+
 int main() {
+  an_invalid_command_in_the_stream_does_not_cost_the_commands_after_it();
+  apply_refuses_a_command_that_is_not_valid();
   replay_twice_is_byte_identical();
   replay_matches_the_live_run();
   every_truncation_replays_the_whole_records_before_it();

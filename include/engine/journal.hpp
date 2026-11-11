@@ -76,8 +76,11 @@ inline void encode_header(Index pool_capacity, std::uint8_t out[kHeaderSize]) {
   detail::put(out + 16, crc32(out, 16), 4);
 }
 
-// Writes one record and returns its length, at most kMaxRecordSize.
+// Writes one record and returns its length, at most kMaxRecordSize. A command
+// that is not valid is not written: nothing in `out` is touched and the
+// result is 0 (ADR-011).
 inline std::size_t encode(const Command& c, std::uint8_t* out) {
+  if (!valid(c)) return 0;
   std::uint8_t* p = out;
   *p++ = static_cast<std::uint8_t>(c.kind);
   detail::put(p, c.id, 8);
@@ -120,6 +123,14 @@ enum class Status {
   BadChecksum,  // the bytes are all there and the checksum does not match
   BadKind,      // the record's first byte is not a command kind
   BadField,     // the checksum matches but a field holds a value that cannot be
+};
+
+// What Writer::append did with a command.
+enum class AppendStatus : std::uint8_t {
+  Ok,        // written and flushed to the operating system
+  Invalid,   // not a valid command: nothing written, the writer is as it was
+  IoError,   // the write or the flush failed: what reached the file is unknown
+  Unusable,  // the writer is not open, or an earlier append failed: nothing written
 };
 
 // Reads a journal held in memory. The data must outlive the reader.
@@ -215,12 +226,16 @@ class Writer {
     return write(header, kHeaderSize);
   }
 
-  // False if the record may not be fully written. Once an append has failed
-  // every later one fails too: what reached the file is unknown, and a record
-  // written after a gap would be a valid-looking record in the wrong place.
-  bool append(const Command& c) {
+  // Once an append has failed every later one is Unusable: what reached the
+  // file is unknown, and a record written after a gap would be a
+  // valid-looking record in the wrong place. Invalid is decided from the
+  // command alone, before the writer's state is looked at, so it is reported
+  // the same by a writer that is closed or has failed (ADR-011).
+  AppendStatus append(const Command& c) {
+    if (!valid(c)) return AppendStatus::Invalid;
+    if (file_ == nullptr || failed_) return AppendStatus::Unusable;
     std::uint8_t rec[kMaxRecordSize];
-    return write(rec, encode(c, rec));
+    return write(rec, encode(c, rec)) ? AppendStatus::Ok : AppendStatus::IoError;
   }
 
   void close() {

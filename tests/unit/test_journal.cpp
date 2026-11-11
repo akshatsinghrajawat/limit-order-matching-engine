@@ -6,12 +6,18 @@
 // bit-flip tests run over every position of the file.
 //
 // CHECK instead of assert so a Release build (-DNDEBUG) still verifies.
+#include <csignal>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <vector>
+
+#if __has_include(<sys/resource.h>)
+#include <sys/resource.h>
+#endif
 
 #include "engine/journal.hpp"
 
@@ -24,6 +30,7 @@
   } while (0)
 
 using namespace engine;
+using journal::AppendStatus;
 using journal::Status;
 
 namespace {
@@ -278,7 +285,7 @@ static void writer_produces_the_same_bytes() {
   {
     journal::Writer w;
     CHECK(w.open(path, kCapacity));
-    for (const Command& c : cmds) CHECK(w.append(c));
+    for (const Command& c : cmds) CHECK(w.append(c) == AppendStatus::Ok);
   }
   std::vector<std::uint8_t> bytes;
   CHECK(journal::load(path, bytes));
@@ -300,7 +307,7 @@ static void writer_flushes_every_record() {
   for (const Command& c : golden_commands()) {
     std::uint8_t rec[journal::kMaxRecordSize];
     expect += journal::encode(c, rec);
-    CHECK(w.append(c));
+    CHECK(w.append(c) == AppendStatus::Ok);
     CHECK(journal::load(path, bytes) && bytes.size() == expect);
   }
   w.close();
@@ -310,14 +317,16 @@ static void writer_flushes_every_record() {
 static void writer_and_load_report_failure() {
   journal::Writer w;
   CHECK(!w.open("no_such_directory/journal.bin", 4));
-  CHECK(!w.append(cancel_command(1)));
+  CHECK(w.append(cancel_command(1)) == AppendStatus::Unusable);
 
   std::vector<std::uint8_t> bytes;
   CHECK(!journal::load("no_such_directory/journal.bin", bytes));
 }
 
-// A write the operating system refuses has to come back as false, from the
-// header or from a record. /dev/full accepts the open and fails every flush.
+// A write the operating system refuses has to be reported, from the header
+// or from a record. /dev/full accepts the open and fails every flush, which
+// fails the header, so open returns false and every append after it is
+// Unusable.
 static void writer_reports_a_full_disk() {
   std::FILE* probe = std::fopen("/dev/full", "wb");
   if (probe == nullptr) return;  // not Linux: nothing to test against
@@ -325,7 +334,135 @@ static void writer_reports_a_full_disk() {
 
   journal::Writer w;
   CHECK(!w.open("/dev/full", 4));
-  CHECK(!w.append(cancel_command(1)));
+  CHECK(w.append(cancel_command(1)) == AppendStatus::Unusable);
+}
+
+static Command with_kind(std::uint8_t kind) {
+  Command c;
+  c.kind = static_cast<CommandKind>(kind);
+  c.id = 42;
+  return c;
+}
+
+static void every_command_kind_is_valid_and_round_trips() {
+  for (const Command& c : golden_commands()) CHECK(valid(c));
+  CHECK(valid(CommandKind::Limit) && valid(CommandKind::Market));
+  CHECK(valid(CommandKind::Cancel) && valid(CommandKind::Modify));
+
+  std::vector<Command> back;
+  std::size_t valid_bytes = 0;
+  const auto bytes = encode_file(kCapacity, golden_commands());
+  CHECK(read_all(bytes.data(), bytes.size(), back, valid_bytes) == Status::End);
+  CHECK(back == golden_commands());
+}
+
+// Nothing is written for a command the reader would refuse, and the buffer
+// the caller passed in is left as it was.
+static void invalid_kinds_are_not_encoded() {
+  for (const std::uint8_t kind : {0, 5, 9, 255}) {
+    const Command c = with_kind(kind);
+    CHECK(!valid(c) && !valid(c.kind));
+    std::uint8_t rec[journal::kMaxRecordSize];
+    std::memset(rec, 0xAA, sizeof rec);
+    CHECK(journal::encode(c, rec) == 0);
+    for (const std::uint8_t byte : rec) CHECK(byte == 0xAA);
+  }
+}
+
+// The validity check and the reader are two statements of one rule. For every
+// possible first byte of a record, the reader calls it a bad kind exactly
+// when valid() says the kind does not exist.
+static void kind_validity_agrees_with_the_reader() {
+  int valid_kinds = 0;
+  for (int b = 0; b < 256; ++b) {
+    const auto kind = static_cast<CommandKind>(b);
+    std::vector<std::uint8_t> bytes(journal::kHeaderSize);
+    journal::encode_header(kCapacity, bytes.data());
+    if (valid(kind)) {
+      Command c;
+      c.kind = kind;
+      std::uint8_t rec[journal::kMaxRecordSize];
+      const std::size_t n = journal::encode(c, rec);
+      CHECK(n > 0);
+      bytes.insert(bytes.end(), rec, rec + n);
+      ++valid_kinds;
+    } else {
+      bytes.push_back(static_cast<std::uint8_t>(b));
+      bytes.insert(bytes.end(), 12, 0);
+    }
+    journal::Reader r(bytes.data(), bytes.size());
+    CHECK(r.open() == Status::Ok);
+    Command out;
+    const Status s = r.next(out);
+    CHECK((s == Status::BadKind) == !valid(kind));
+    if (valid(kind)) CHECK(s == Status::Ok && out.kind == kind);
+  }
+  CHECK(valid_kinds == 4);
+}
+
+// A refused command leaves no trace: the file is byte for byte what it would
+// have been without it, and the writer carries on.
+static void an_invalid_command_leaves_the_file_alone() {
+  const char* with = "journal_invalid_with.bin";
+  const char* without = "journal_invalid_without.bin";
+  {
+    journal::Writer a, b;
+    CHECK(a.open(with, kCapacity) && b.open(without, kCapacity));
+    CHECK(a.append(limit_command(1, Side::Buy, 100, 5, 1)) == AppendStatus::Ok);
+    CHECK(b.append(limit_command(1, Side::Buy, 100, 5, 1)) == AppendStatus::Ok);
+    for (const std::uint8_t kind : {0, 5, 9, 255}) {
+      CHECK(a.append(with_kind(kind)) == AppendStatus::Invalid);
+    }
+    CHECK(a.append(cancel_command(1)) == AppendStatus::Ok);
+    CHECK(b.append(cancel_command(1)) == AppendStatus::Ok);
+  }
+  std::vector<std::uint8_t> x, y;
+  CHECK(journal::load(with, x) && journal::load(without, y));
+  CHECK(x == y);
+  std::remove(with);
+  std::remove(without);
+}
+
+// A writer that is not open cannot write anything, but whether a command is
+// acceptable does not depend on that, so a bad one is still called bad.
+static void a_writer_that_is_not_open_is_unusable_but_reports_invalid() {
+  journal::Writer w;
+  CHECK(w.append(cancel_command(1)) == AppendStatus::Unusable);
+  CHECK(w.append(with_kind(9)) == AppendStatus::Invalid);
+}
+
+// open succeeds, then the file size limit is lowered to leave room for the
+// header and a part of the first record: the write fails after the open
+// worked, which /dev/full cannot do.
+static void a_failed_write_is_an_io_error_and_then_the_writer_is_unusable() {
+#if defined(RLIMIT_FSIZE) && defined(SIGXFSZ)
+  const char* path = "journal_fsize_test.bin";
+  auto old_handler = std::signal(SIGXFSZ, SIG_IGN);
+  rlimit old_limit{};
+  CHECK(getrlimit(RLIMIT_FSIZE, &old_limit) == 0);
+  rlimit limit = old_limit;
+  limit.rlim_cur = journal::kHeaderSize + 10;
+  if (setrlimit(RLIMIT_FSIZE, &limit) != 0) {
+    std::signal(SIGXFSZ, old_handler);
+    return;
+  }
+
+  journal::Writer w;
+  const bool opened = w.open(path, kCapacity);
+  const AppendStatus first = w.append(cancel_command(1));
+  const AppendStatus second = w.append(cancel_command(2));
+  const AppendStatus bad = w.append(with_kind(9));
+  w.close();
+
+  setrlimit(RLIMIT_FSIZE, &old_limit);
+  std::signal(SIGXFSZ, old_handler);
+  std::remove(path);
+
+  CHECK(opened);
+  CHECK(first == AppendStatus::IoError);
+  CHECK(second == AppendStatus::Unusable);
+  CHECK(bad == AppendStatus::Invalid);
+#endif
 }
 
 int main() {
@@ -341,5 +478,11 @@ int main() {
   writer_flushes_every_record();
   writer_and_load_report_failure();
   writer_reports_a_full_disk();
+  every_command_kind_is_valid_and_round_trips();
+  invalid_kinds_are_not_encoded();
+  kind_validity_agrees_with_the_reader();
+  an_invalid_command_leaves_the_file_alone();
+  a_writer_that_is_not_open_is_unusable_but_reports_invalid();
+  a_failed_write_is_an_io_error_and_then_the_writer_is_unusable();
   std::puts("journal ok");
 }

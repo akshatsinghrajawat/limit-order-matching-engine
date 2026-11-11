@@ -28,9 +28,15 @@ struct Outcome {
 };
 
 // Runs one command on the book. The trades an add made are left in
-// scratch.trades, which is empty after any other command.
+// scratch.trades, which is empty after any other command. A command that is
+// not valid does nothing: the book is untouched, it takes no sequence
+// number, and the outcome is the default one (ADR-011).
 inline Outcome apply(Book& book, const Command& c, Book::AddResult& scratch) {
   Outcome o;
+  if (!valid(c)) {
+    scratch.reset();
+    return o;
+  }
   switch (c.kind) {
     case CommandKind::Limit:
       book.add_limit_order(scratch, c.id, c.side, c.price, c.qty, c.account, c.tif);

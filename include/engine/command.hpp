@@ -11,6 +11,19 @@ namespace engine {
 
 enum class CommandKind : std::uint8_t { Limit = 1, Market = 2, Cancel = 3, Modify = 4 };
 
+// Whether the journal has a record for this kind. journal::Reader accepts
+// the same four values and no others (ADR-011).
+inline bool valid(CommandKind k) {
+  switch (k) {
+    case CommandKind::Limit:
+    case CommandKind::Market:
+    case CommandKind::Cancel:
+    case CommandKind::Modify:
+      return true;
+  }
+  return false;
+}
+
 struct Command {
   CommandKind kind = CommandKind::Limit;
   OrderId id = 0;
@@ -26,6 +39,10 @@ struct Command {
   }
   friend bool operator!=(const Command& a, const Command& b) { return !(a == b); }
 };
+
+// Whether the journal can store the command and read it back unchanged
+// (ADR-011). Only the kind is checked so far.
+inline bool valid(const Command& c) { return valid(c.kind); }
 
 inline Command limit_command(OrderId id, Side side, Price price, Qty qty, std::uint32_t account,
                              TimeInForce tif = TimeInForce::GTC) {
