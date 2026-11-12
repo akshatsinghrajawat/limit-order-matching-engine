@@ -27,6 +27,10 @@ inline bool valid(Side s) { return s == Side::Buy || s == Side::Sell; }
 // the rest.
 enum class TimeInForce : std::uint8_t { GTC, IOC, FOK };
 
+inline bool valid(TimeInForce t) {
+  return t == TimeInForce::GTC || t == TimeInForce::IOC || t == TimeInForce::FOK;
+}
+
 // Hot/cold split per ADR-002. `timestamp` is deliberately absent: S7
 // forbids wall-clock state anywhere in the core, so it cannot live here
 // regardless of access frequency — ADR-002 listed it as a cold field

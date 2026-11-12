@@ -231,6 +231,9 @@ check book-limit-bad-side-accepted 1 \
 check book-market-bad-side-accepted 2 \
   'if (!valid(side)) return;' \
   ';'
+check book-limit-bad-tif-accepted 1 \
+  'if (!valid(tif)) return;' \
+  ';'
 
 use_target include/engine/id_map.hpp
 check idmap-table-too-small 1 \
@@ -385,6 +388,13 @@ check types-third-side-valid 1 \
   'return s == Side::Buy || s == Side::Sell;' \
   'return s == Side::Buy || s == Side::Sell || s == static_cast<Side>(2);'
 
+check types-fok-not-a-tif 1 \
+  't == TimeInForce::IOC || t == TimeInForce::FOK' \
+  't == TimeInForce::IOC'
+check types-fourth-tif-valid 1 \
+  't == TimeInForce::IOC || t == TimeInForce::FOK' \
+  't == TimeInForce::IOC || t == TimeInForce::FOK || t == static_cast<TimeInForce>(3)'
+
 use_target include/engine/command.hpp
 check command-limit-kind-not-valid 1 \
   'case CommandKind::Limit:' \
@@ -401,6 +411,12 @@ check command-valid-ignores-side 1 \
 check command-cancel-side-checked 1 \
   'c.kind == CommandKind::Market) return valid(c.side);' \
   'c.kind != CommandKind::Limit) return valid(c.side);'
+check command-valid-ignores-tif 1 \
+  'if (c.kind == CommandKind::Limit && !valid(c.tif)) return false;' \
+  ';'
+check command-market-tif-checked 1 \
+  'c.kind == CommandKind::Limit && !valid(c.tif)' \
+  'c.kind != CommandKind::Cancel && !valid(c.tif)'
 check command-market-side-unchecked 1 \
   'c.kind == CommandKind::Limit || c.kind == CommandKind::Market' \
   'c.kind == CommandKind::Limit'
@@ -456,6 +472,9 @@ check replay-bad-header-ignored 1 \
 check replay-bad-side-printed-as-sell 1 \
   'if (side == Side::Sell) return "sell";' \
   'return "sell";'
+check replay-bad-tif-printed-as-fok 1 \
+  'if (tif == TimeInForce::FOK) return "fok";' \
+  'return "fok";'
 check replay-invalid-command-applied 1 \
   'if (!valid(c)) {' \
   'if (false) {'

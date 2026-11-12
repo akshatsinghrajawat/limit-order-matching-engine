@@ -235,6 +235,11 @@ static void apply_refuses_a_command_that_is_not_valid() {
     refused.push_back(limit_command(99, static_cast<Side>(side), 90, 5, 1));
     refused.push_back(market_command(99, static_cast<Side>(side), 5, 1));
   }
+  for (const std::uint8_t tif : {3, 9, 255}) {
+    refused.push_back(limit_command(99, Side::Buy, 100, 5, 1, static_cast<TimeInForce>(tif)));
+    refused.push_back(limit_command(99, Side::Sell, 90, 5, 1, static_cast<TimeInForce>(tif)));
+    refused.push_back(limit_command(99, Side::Buy, 50, 5, 1, static_cast<TimeInForce>(tif)));
+  }
   for (const Command& bad : refused) {
     Book book(kCapacity);
     Book::AddResult scratch;
@@ -290,6 +295,20 @@ static void the_log_says_when_a_side_does_not_exist() {
   CHECK(log.find("limit id=3 side=buy ") != std::string::npos);
   CHECK(log.find("market id=4 side=sell ") != std::string::npos);
   CHECK(log.find("side=sell") == log.rfind("side=sell"));  // only the real sell
+
+  log.clear();
+  for (const std::uint8_t tif : {3, 255}) {
+    replay::append_events(log, tif, limit_command(1, Side::Buy, 100, 5, 1, static_cast<TimeInForce>(tif)), none,
+                          no_trades);
+  }
+  replay::append_events(log, 7, limit_command(2, Side::Buy, 100, 5, 1, TimeInForce::GTC), none, no_trades);
+  replay::append_events(log, 8, limit_command(3, Side::Buy, 100, 5, 1, TimeInForce::IOC), none, no_trades);
+  replay::append_events(log, 9, limit_command(4, Side::Buy, 100, 5, 1, TimeInForce::FOK), none, no_trades);
+  CHECK(log.find("tif=invalid(3) ") != std::string::npos);
+  CHECK(log.find("tif=invalid(255) ") != std::string::npos);
+  CHECK(log.find("tif=gtc ") != std::string::npos);
+  CHECK(log.find("tif=ioc ") != std::string::npos);
+  CHECK(log.find("tif=fok ") != std::string::npos);
 }
 
 int main() {

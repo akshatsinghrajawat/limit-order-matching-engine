@@ -462,6 +462,66 @@ static void a_side_that_does_not_exist_is_refused_by_the_writer() {
   std::remove(without);
 }
 
+// The time-in-force byte of a limit record, as for the side. Market, cancel
+// and modify records have no such byte, so a command of those kinds is valid
+// whatever its tif field holds.
+static void tif_validity_agrees_with_the_reader() {
+  int valid_tifs = 0;
+  for (int byte = 0; byte < 256; ++byte) {
+    const bool ok = valid(static_cast<TimeInForce>(byte));
+    valid_tifs += ok;
+    auto b = encode_file(kCapacity, {limit_command(1, Side::Buy, 100, 5, 1)});
+    b[journal::kHeaderSize + 10] = static_cast<std::uint8_t>(byte);
+    reseal(b, journal::kHeaderSize, b.size() - journal::kHeaderSize - 4);
+    journal::Reader r(b.data(), b.size());
+    CHECK(r.open() == Status::Ok);
+    Command out;
+    const Status s = r.next(out);
+    CHECK((s == Status::BadField) == !ok);
+    if (ok) CHECK(s == Status::Ok && static_cast<int>(out.tif) == byte);
+  }
+  CHECK(valid_tifs == 3);
+}
+
+static void a_tif_that_does_not_exist_is_refused_by_the_writer() {
+  const char* with = "journal_tif_with.bin";
+  const char* without = "journal_tif_without.bin";
+  {
+    journal::Writer a, b;
+    CHECK(a.open(with, kCapacity) && b.open(without, kCapacity));
+    for (const std::uint8_t byte : {3, 9, 255}) {
+      const TimeInForce bad = static_cast<TimeInForce>(byte);
+      const Command c = limit_command(7, Side::Buy, 100, 5, 1, bad);
+      CHECK(!valid(c));
+      std::uint8_t rec[journal::kMaxRecordSize];
+      std::memset(rec, 0xAA, sizeof rec);
+      CHECK(journal::encode(c, rec) == 0);
+      for (const std::uint8_t x : rec) CHECK(x == 0xAA);
+      CHECK(a.append(c) == AppendStatus::Invalid);
+
+      Command market = market_command(1, Side::Buy, 5, 1);
+      Command cancel = cancel_command(1);
+      Command modify = modify_command(1, 100, 5);
+      market.tif = cancel.tif = modify.tif = bad;
+      CHECK(valid(market) && valid(cancel) && valid(modify));
+      std::uint8_t with_tif[journal::kMaxRecordSize], plain[journal::kMaxRecordSize];
+      const std::size_t n = journal::encode(market, with_tif);
+      CHECK(n == journal::encode(market_command(1, Side::Buy, 5, 1), plain) && std::memcmp(with_tif, plain, n) == 0);
+      const std::size_t m = journal::encode(cancel, with_tif);
+      CHECK(m == journal::encode(cancel_command(1), plain) && std::memcmp(with_tif, plain, m) == 0);
+      const std::size_t k = journal::encode(modify, with_tif);
+      CHECK(k == journal::encode(modify_command(1, 100, 5), plain) && std::memcmp(with_tif, plain, k) == 0);
+    }
+    CHECK(a.append(limit_command(1, Side::Buy, 100, 5, 1)) == AppendStatus::Ok);
+    CHECK(b.append(limit_command(1, Side::Buy, 100, 5, 1)) == AppendStatus::Ok);
+  }
+  std::vector<std::uint8_t> x, y;
+  CHECK(journal::load(with, x) && journal::load(without, y));
+  CHECK(x == y);
+  std::remove(with);
+  std::remove(without);
+}
+
 // A refused command leaves no trace: the file is byte for byte what it would
 // have been without it, and the writer carries on.
 static void an_invalid_command_leaves_the_file_alone() {
@@ -545,6 +605,8 @@ int main() {
   kind_validity_agrees_with_the_reader();
   side_validity_agrees_with_the_reader();
   a_side_that_does_not_exist_is_refused_by_the_writer();
+  tif_validity_agrees_with_the_reader();
+  a_tif_that_does_not_exist_is_refused_by_the_writer();
   an_invalid_command_leaves_the_file_alone();
   a_writer_that_is_not_open_is_unusable_but_reports_invalid();
   a_failed_write_is_an_io_error_and_then_the_writer_is_unusable();

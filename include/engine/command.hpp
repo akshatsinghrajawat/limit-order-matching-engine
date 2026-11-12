@@ -46,6 +46,7 @@ struct Command {
 // written and never read.
 inline bool valid(const Command& c) {
   if (!valid(c.kind)) return false;
+  if (c.kind == CommandKind::Limit && !valid(c.tif)) return false;
   if (c.kind == CommandKind::Limit || c.kind == CommandKind::Market) return valid(c.side);
   return true;
 }

@@ -492,6 +492,42 @@ static void test18b_invalid_side_takes_no_seq_no_and_changes_nothing() {
   }
 }
 
+// Same as 18b for the time in force of a limit order. Before the check, any
+// value past FOK behaved as IOC: it traded and never rested.
+static void test18c_invalid_tif_takes_no_seq_no_and_changes_nothing() {
+  for (const std::uint8_t byte : {3, 9, 255}) {
+    const TimeInForce bad = static_cast<TimeInForce>(byte);
+    Book book(16);
+    Book control(16);
+    for (Book* b : {&book, &control}) {
+      b->add_limit_order(1, Side::Sell, 100, 5, kSellAcct);
+      b->add_limit_order(2, Side::Buy, 90, 5, kBuyAcct);
+    }
+
+    const auto refused = [](const Book::AddResult& r) {
+      return !r.accepted && r.trades.empty() && r.resting_qty == 0 && !r.pool_exhausted && !r.stp_rejected;
+    };
+    CHECK(refused(book.add_limit_order(3, Side::Buy, 100, 5, kBuyAcct, bad)));   // marketable against the ask
+    CHECK(refused(book.add_limit_order(4, Side::Sell, 90, 5, kSellAcct, bad)));  // marketable against the bid
+    CHECK(refused(book.add_limit_order(5, Side::Buy, 80, 5, kBuyAcct, bad)));    // would rest as GTC
+    CHECK(refused(book.add_limit_order(6, Side::Sell, 150, 5, kSellAcct, bad)));
+
+    CHECK(same_book(book, control));
+    CHECK(book.invariant_violation() == nullptr);
+
+    auto r = book.add_limit_order(3, Side::Buy, 95, 1, kBuyAcct);
+    auto rc = control.add_limit_order(3, Side::Buy, 95, 1, kBuyAcct);
+    CHECK(r.accepted && rc.accepted && r.resting_qty == 1);
+
+    r = book.add_limit_order(10, Side::Buy, 100, 3, kBuyAcct);
+    rc = control.add_limit_order(10, Side::Buy, 100, 3, kBuyAcct);
+    CHECK(r.trades.size() == 1 && rc.trades.size() == 1);
+    CHECK(r.trades[0].seq_no == rc.trades[0].seq_no && r.trades[0].trade_id == rc.trades[0].trade_id);
+    CHECK(same_book(book, control));
+    CHECK(book.invariant_violation() == nullptr);
+  }
+}
+
 static void test19_pool_exhaustion_is_clean_rejection() {
   Book book(2);  // tiny pool -- exactly 2 slots, deliberately tight
   auto r1 = book.add_limit_order(1, Side::Buy, 100, 5, kBuyAcct);
@@ -686,9 +722,10 @@ int main() {
   test17_self_trade_prevention();
   test18_invalid_input_rejected_at_ingress();
   test18b_invalid_side_takes_no_seq_no_and_changes_nothing();
+  test18c_invalid_tif_takes_no_seq_no_and_changes_nothing();
   test19_pool_exhaustion_is_clean_rejection();
   test_snapshot_reports_priority_order();
   test_invariants_hold_and_detect_corruption();
-  std::printf("conformance tests 1-19 (+8b, 8c, 12b-12d, 14b-14d, 18b): all passed\n");
+  std::printf("conformance tests 1-19 (+8b, 8c, 12b-12d, 14b-14d, 18b, 18c): all passed\n");
   return 0;
 }

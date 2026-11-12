@@ -89,6 +89,7 @@ class Book {
                         TimeInForce tif = TimeInForce::GTC) {
     result.reset();
     if (!valid(side)) return;  // not a command, so no seq_no (ADR-011)
+    if (!valid(tif)) return;
     const SeqNo seq = next_seq_++;
     if (qty == 0 || id_map_.contains(order_id)) return;
 

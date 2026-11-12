@@ -85,6 +85,13 @@ inline std::string side_label(Side side) {
   return "invalid(" + std::to_string(static_cast<unsigned>(side)) + ")";
 }
 
+inline std::string tif_label(TimeInForce tif) {
+  if (tif == TimeInForce::GTC) return "gtc";
+  if (tif == TimeInForce::IOC) return "ioc";
+  if (tif == TimeInForce::FOK) return "fok";
+  return "invalid(" + std::to_string(static_cast<unsigned>(tif)) + ")";
+}
+
 }  // namespace detail
 
 // One line for the command and its outcome, then one for each trade it made.
@@ -94,14 +101,14 @@ inline void append_events(std::string& log, std::size_t position, const Command&
   using detail::line;
   using detail::s;
   using detail::side_label;
+  using detail::tif_label;
   using detail::u;
   const unsigned long long pos = position;
   switch (c.kind) {
     case CommandKind::Limit:
       line(log, "#%llu limit id=%llu side=%s price=%lld qty=%u account=%u tif=%s ok=%d rest=%u stp=%d full=%d", pos,
            u(c.id), side_label(c.side).c_str(), s(c.price), c.qty, c.account,
-           c.tif == TimeInForce::GTC ? "gtc" : c.tif == TimeInForce::IOC ? "ioc" : "fok", o.ok,
-           o.resting_qty, o.stp_rejected, o.pool_exhausted);
+           tif_label(c.tif).c_str(), o.ok, o.resting_qty, o.stp_rejected, o.pool_exhausted);
       break;
     case CommandKind::Market:
       line(log, "#%llu market id=%llu side=%s qty=%u account=%u ok=%d rest=%u stp=%d full=%d", pos, u(c.id),
