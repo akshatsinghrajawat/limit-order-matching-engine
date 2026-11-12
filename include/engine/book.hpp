@@ -69,6 +69,11 @@ class Book {
     }
   };
 
+  // The six entry points that change the book are noexcept (ADR-012). With
+  // `result.trades` reserved to the pool capacity nothing in them allocates;
+  // if something did throw, the command would be half applied, so the
+  // process ends instead.
+  //
   // S5. tif defaults to GTC (rests any residual). IOC/FOK never rest --
   // see TimeInForce's doc comment in types.hpp.
   //
@@ -86,7 +91,7 @@ class Book {
   // cause if the pre-check ignored STP).
   void add_limit_order(AddResult& result, OrderId order_id, Side side, Price price, Qty qty,
                         std::uint32_t account,
-                        TimeInForce tif = TimeInForce::GTC) {
+                        TimeInForce tif = TimeInForce::GTC) noexcept {
     result.reset();
     if (!valid(side)) return;  // not a command, so no seq_no (ADR-011)
     if (!valid(tif)) return;
@@ -133,7 +138,7 @@ class Book {
 
   AddResult add_limit_order(OrderId order_id, Side side, Price price, Qty qty,
                              std::uint32_t account,
-                             TimeInForce tif = TimeInForce::GTC) {
+                             TimeInForce tif = TimeInForce::GTC) noexcept {
     AddResult result;
     add_limit_order(result, order_id, side, price, qty, account, tif);
     return result;
@@ -146,7 +151,7 @@ class Book {
   // stops the sweep and whatever's left goes unfilled rather than crossing
   // through it (S3 makes no TIF exception).
   void add_market_order(AddResult& result, OrderId order_id, Side side, Qty qty,
-                         std::uint32_t account) {
+                         std::uint32_t account) noexcept {
     result.reset();
     if (!valid(side)) return;  // not a command, so no seq_no (ADR-011)
     const SeqNo seq = next_seq_++;
@@ -171,7 +176,7 @@ class Book {
   }
 
   AddResult add_market_order(OrderId order_id, Side side, Qty qty,
-                              std::uint32_t account) {
+                              std::uint32_t account) noexcept {
     AddResult result;
     add_market_order(result, order_id, side, qty, account);
     return result;
@@ -188,7 +193,7 @@ class Book {
   // exactly -- a modify on an order_id that was cancelled, or one whose
   // slot was freed via a fill in cross(), fails the same id_map_ lookup
   // (test 8b, 8c).
-  bool modify_order(OrderId order_id, Price new_price, Qty new_qty) {
+  bool modify_order(OrderId order_id, Price new_price, Qty new_qty) noexcept {
     const SeqNo seq = next_seq_++;
     if (new_qty == 0) return false;
 
@@ -230,7 +235,7 @@ class Book {
 
   // False covers both "never existed" and "already cancelled/filled" --
   // S1/test-8 deliberately don't distinguish those at this layer.
-  bool cancel_order(OrderId order_id) {
+  bool cancel_order(OrderId order_id) noexcept {
     ++next_seq_;  // every command takes a seq_no, including this one (ADR-009)
     const Handle* found = id_map_.find(order_id);
     if (found == nullptr) return false;
@@ -365,7 +370,8 @@ class Book {
         Qty fill = std::min(incoming.qty, maker.qty);
 
         trades.push_back({maker.order_id, incoming.order_id, maker.price,
-                           fill, next_trade_id_++, seq});
+                           fill, next_trade_id_, seq});
+        ++next_trade_id_;  // after the push, so an id is used only by a trade that exists
         incoming.qty -= fill;
         maker.qty -= fill;
 

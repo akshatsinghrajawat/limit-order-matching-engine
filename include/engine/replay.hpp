@@ -164,6 +164,7 @@ inline bool replay(const std::uint8_t* data, std::size_t size, Replayed& out) {
 
   Book book(reader.pool_capacity());
   Book::AddResult scratch;
+  scratch.trades.reserve(reader.pool_capacity());
   Command c;
   while ((out.stop = reader.next(c)) == journal::Status::Ok) {
     const Outcome o = apply(book, c, scratch);

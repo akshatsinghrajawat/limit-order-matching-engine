@@ -113,6 +113,12 @@ if(BUILD_TESTS)
   target_link_libraries(test_journal PRIVATE test_support)
   add_test(NAME unit_journal COMMAND test_journal WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
+  # Replaces global operator new to fail allocations, so it does not link
+  # alloc_counter.
+  add_executable(test_fail_stop tests/unit/test_fail_stop.cpp)
+  target_link_libraries(test_fail_stop PRIVATE test_support)
+  add_test(NAME unit_fail_stop COMMAND test_fail_stop WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+
   add_executable(test_replay tests/replay/test_replay.cpp)
   target_link_libraries(test_replay PRIVATE test_support)
   add_test(NAME replay_deterministic COMMAND test_replay)

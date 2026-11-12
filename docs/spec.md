@@ -143,6 +143,17 @@ currently being matched?" and "what about ingress during a FOK pre-check?"
 — are both non-issues **because S8 holds**, not because they were handled
 as special cases.
 
+### Failure and recovery
+
+The entry points that change the book are `noexcept`: a command is never
+left half applied by an exception. The caller reserves room for the trades
+of one command at startup (one per resting order at most, so the pool
+capacity), after which none of them allocates. The loop writes each command
+to the journal and applies it only if the write succeeded, so after a stop
+replaying the journal gives the state an uninterrupted run reaches. Details
+and what is not covered are in ADR-012; the journal is the replay authority
+(ADR-006).
+
 ---
 
 ## Known simplifications (carried into the README's "what's not fast yet")

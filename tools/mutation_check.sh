@@ -192,8 +192,11 @@ check cancel-takes-no-seq 1 \
   '++next_seq_;' \
   ';'
 check trade-seq-zero 1 \
-  'fill, next_trade_id_++, seq});' \
-  'fill, next_trade_id_++, 0});'
+  'fill, next_trade_id_, seq});' \
+  'fill, next_trade_id_, 0});'
+check trade-id-not-advanced 1 \
+  '++next_trade_id_;' \
+  ';'
 check rest-seq-zero 1 \
   'pool_.get(h)->seq_no = seq;' \
   'pool_.get(h)->seq_no = 0;'
