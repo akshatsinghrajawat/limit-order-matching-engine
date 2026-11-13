@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -180,6 +181,69 @@ static void replay_uses_the_pool_capacity_in_the_header() {
   CHECK(a.log != b.log);
 }
 
+// The header says how many pool slots to build, and the file is not trusted
+// to ask for a sensible number. At the limit replay runs; one over, it
+// refuses before a book exists and does not shrink the request to fit.
+static void a_capacity_over_the_limit_is_refused_not_clamped() {
+  const auto cmds = stream::make(6, 200);
+  const replay::ReplayLimits defaults;
+
+  {  // a capacity of zero is legal: every resting order is dropped as pool-exhausted
+    const auto bytes = stream::journal_bytes(0, cmds);
+    replay::Replayed r;
+    CHECK(replay::replay(bytes.data(), bytes.size(), r));
+    CHECK(r.limit == replay::Limit::None && r.stop == Status::End && r.commands == cmds.size());
+  }
+  {  // exactly the default limit replays all the way through
+    const auto bytes = stream::journal_bytes(defaults.max_pool_capacity, cmds);
+    replay::Replayed r;
+    CHECK(replay::replay(bytes.data(), bytes.size(), r));
+    CHECK(r.limit == replay::Limit::None && r.stop == Status::End && r.commands == cmds.size());
+  }
+  {  // one over: refused, nothing replayed, and the journal itself is not what stopped it
+    const auto bytes = stream::journal_bytes(defaults.max_pool_capacity + 1, cmds);
+    replay::Replayed r;
+    CHECK(!replay::replay(bytes.data(), bytes.size(), r));
+    CHECK(r.limit == replay::Limit::PoolCapacity);
+    CHECK(r.stop == Status::Ok);
+    CHECK(r.commands == 0 && r.valid_bytes == 0);
+    CHECK(r.log.empty() && r.book.empty());
+  }
+
+  // The bound is the argument, not a constant.
+  const replay::ReplayLimits small{16};
+  const auto fits = stream::journal_bytes(16, cmds);
+  const auto over = stream::journal_bytes(17, cmds);
+  replay::Replayed a, b;
+  CHECK(replay::replay(fits.data(), fits.size(), a, small));
+  CHECK(a.limit == replay::Limit::None && a.commands == cmds.size());
+  CHECK(!replay::replay(over.data(), over.size(), b, small));
+  CHECK(b.limit == replay::Limit::PoolCapacity);
+  CHECK(replay::replay(over.data(), over.size(), b));  // the same journal under the default limit
+  CHECK(b.limit == replay::Limit::None);
+}
+
+// A header that cannot be read is reported as the journal's fault, whatever
+// capacity it claims.
+static void an_unreadable_header_is_not_a_limit() {
+  std::vector<std::uint8_t> bytes(journal::kHeaderSize);
+  journal::encode_header(std::numeric_limits<Index>::max(), bytes.data());
+
+  std::vector<std::uint8_t> flipped = bytes;
+  flipped[13] ^= 0x01;  // inside the capacity field, so the CRC no longer matches
+  replay::Replayed r;
+  CHECK(!replay::replay(flipped.data(), flipped.size(), r));
+  CHECK(r.stop == Status::BadChecksum && r.limit == replay::Limit::None);
+
+  for (std::size_t n = 0; n < journal::kHeaderSize; ++n) {
+    CHECK(!replay::replay(bytes.data(), n, r));
+    CHECK(r.stop == Status::Truncated && r.limit == replay::Limit::None);
+  }
+
+  CHECK(!replay::replay(bytes.data(), bytes.size(), r));  // intact: over the limit
+  CHECK(r.stop == Status::Ok && r.limit == replay::Limit::PoolCapacity);
+}
+
 // A command the journal cannot hold is refused by the writer and never
 // reaches the file, so a journal written around it replays every command that
 // was accepted. Before this, the bad record was written, the reader stopped at
@@ -320,5 +384,7 @@ int main() {
   every_truncation_replays_the_whole_records_before_it();
   every_bit_flip_replays_the_records_before_it();
   replay_uses_the_pool_capacity_in_the_header();
+  a_capacity_over_the_limit_is_refused_not_clamped();
+  an_unreadable_header_is_not_a_limit();
   std::puts("replay ok");
 }

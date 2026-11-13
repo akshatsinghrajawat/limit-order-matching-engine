@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <new>
 #include <string>
 #include <type_traits>
@@ -44,11 +45,16 @@ namespace {
 bool g_armed = false;
 bool g_throw = false;
 std::size_t g_allocations = 0;
+std::size_t g_fail_at = 0;      // fail the allocation with this number, counting from 1; 0 for none
+std::size_t g_failed_size = 0;  // the size that allocation asked for
 
 void* allocate(std::size_t n) {
   if (g_armed) {
     ++g_allocations;
-    if (g_throw) throw std::bad_alloc();
+    if (g_throw || g_allocations == g_fail_at) {
+      g_failed_size = n;
+      throw std::bad_alloc();
+    }
   }
   void* p = std::malloc(n != 0 ? n : 1);
   if (p == nullptr) throw std::bad_alloc();
@@ -64,6 +70,21 @@ struct Armed {
   }
   ~Armed() { g_armed = false; }
   std::size_t allocations() const { return g_allocations; }
+};
+
+// Lets the first n - 1 allocations through and fails the nth.
+struct FailNth {
+  explicit FailNth(std::size_t n) {
+    g_allocations = 0;
+    g_throw = false;
+    g_fail_at = n;
+    g_failed_size = 0;
+    g_armed = true;
+  }
+  ~FailNth() {
+    g_armed = false;
+    g_fail_at = 0;
+  }
 };
 
 }  // namespace
@@ -203,6 +224,56 @@ void no_entry_point_allocates_once_the_result_is_reserved() {
   CHECK(ids.expected == 100);
 }
 
+// The header's capacity is the file's word. Over the limit, replay says so
+// before it allocates anything: every allocation is made to fail here, so a
+// book built for 4 billion slots would show as an OutOfMemory, not a refusal.
+void a_capacity_far_over_the_limit_allocates_nothing() {
+  const replay::ReplayLimits limits;
+  const std::vector<Command> cmds = stream::make(3, 50);
+  for (const Index capacity : {limits.max_pool_capacity + 1, std::numeric_limits<Index>::max() - 1,
+                               std::numeric_limits<Index>::max()}) {
+    const auto bytes = stream::journal_bytes(capacity, cmds);
+    replay::Replayed r;
+    Armed armed(true);
+    CHECK(!replay::replay(bytes.data(), bytes.size(), r));
+    CHECK(armed.allocations() == 0);
+    CHECK(r.limit == replay::Limit::PoolCapacity);
+    CHECK(r.commands == 0);
+  }
+}
+
+// A failed allocation while building the book is reported, at every point
+// it can happen. The last allocation of the build is the trade buffer, which
+// is reserved to the pool capacity (ADR-012).
+void a_failed_allocation_while_building_is_reported_as_out_of_memory() {
+  const auto bytes = stream::journal_bytes(kCapacity, {});
+
+  std::size_t build = 0;
+  {
+    Armed armed(false);
+    Book book(kCapacity);
+    Book::AddResult scratch;
+    scratch.trades.reserve(kCapacity);
+    build = armed.allocations();
+  }
+  CHECK(build > 1);
+
+  for (std::size_t k = 1; k <= build; ++k) {
+    replay::Replayed r;
+    {
+      FailNth fail(k);
+      CHECK(!replay::replay(bytes.data(), bytes.size(), r));
+      if (k == build) CHECK(g_failed_size == kCapacity * sizeof(Trade));
+    }
+    CHECK(r.limit == replay::Limit::OutOfMemory);
+    CHECK(r.commands == 0 && r.log.empty() && r.book.empty());
+  }
+
+  replay::Replayed ok;
+  CHECK(replay::replay(bytes.data(), bytes.size(), ok));
+  CHECK(ok.limit == replay::Limit::None);
+}
+
 // The journal-first loop, stopped after each command in turn: replaying what
 // the journal holds gives the same book and the same log as the loop, and
 // the numbers the next commands receive are the same too. Two commands
@@ -306,6 +377,8 @@ int main() {
   the_injector_sees_the_allocations_a_reserve_prevents();
   no_entry_point_allocates_once_the_result_is_reserved();
   replaying_the_journal_after_any_stop_matches_the_loop();
+  a_capacity_far_over_the_limit_allocates_nothing();
+  a_failed_allocation_while_building_is_reported_as_out_of_memory();
 #ifdef HAVE_FORK
   a_failed_allocation_ends_the_process_and_the_journal_replays();
 #else

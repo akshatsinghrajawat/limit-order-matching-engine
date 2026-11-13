@@ -452,8 +452,26 @@ check replay-trade-lines-dropped 1 \
   'for (const Trade& t : trades) {' \
   'for (const Trade& t : trades) { continue;'
 check replay-ignores-header-capacity 1 \
-  'Book book(reader.pool_capacity());' \
-  'Book book(4096);'
+  'book.emplace(reader.pool_capacity());' \
+  'book.emplace(4096);'
+check replay-capacity-limit-off-by-one 1 \
+  'reader.pool_capacity() > limits.max_pool_capacity' \
+  'reader.pool_capacity() >= limits.max_pool_capacity'
+check replay-capacity-limit-ignored 1 \
+  'if (reader.pool_capacity() > limits.max_pool_capacity) {' \
+  'if (false) {'
+check replay-capacity-limit-not-reported 1 \
+  'out.limit = Limit::PoolCapacity;' \
+  'out.limit = Limit::None;'
+check replay-oom-not-caught 1 \
+  'catch (const std::bad_alloc&) {' \
+  'catch (const std::bad_array_new_length&) {'
+check replay-oom-not-reported 1 \
+  'out.limit = Limit::OutOfMemory;' \
+  'out.limit = Limit::None;'
+check replay-trade-reserve-dropped 1 \
+  'scratch.trades.reserve(reader.pool_capacity());' \
+  ';'
 check replay-position-off-by-one 1 \
   'append_events(out.log, out.commands, c, o, scratch.trades);' \
   'append_events(out.log, out.commands + 1, c, o, scratch.trades);'
@@ -464,7 +482,7 @@ check replay-valid-bytes-not-set 1 \
   'out.valid_bytes = reader.valid_bytes();' \
   ';'
 check replay-book-not-serialized 1 \
-  'out.book = serialize_book(book);' \
+  'out.book = serialize_book(*book);' \
   ';'
 check replay-book-sides-swapped 1 \
   'o.side == Side::Buy ? "bid" : "ask"' \

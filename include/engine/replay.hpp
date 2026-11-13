@@ -10,6 +10,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <new>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -144,35 +146,65 @@ inline std::string serialize_book(const Book& book) {
   return out;
 }
 
+// Why replay refused to start or stopped, when the reason is not damage to
+// the journal. journal::Status keeps describing the file.
+enum class Limit : std::uint8_t {
+  None,
+  PoolCapacity,  // the header asks for more pool slots than ReplayLimits allows
+  OutOfMemory,   // building the book or reserving the trade buffer failed
+};
+
+// The header's pool capacity is read from the file, and a Book of that size
+// is allocated up front, so it is bounded before anything is built. A
+// capacity over the bound is refused, never clamped: a smaller book would
+// replay to a different state (ADR-009, point 3).
+struct ReplayLimits {
+  Index max_pool_capacity = 1u << 20;
+};
+
 struct Replayed {
   std::string log;
   std::string book;                   // the book after the last command that replayed
   std::size_t commands = 0;           // how many commands replayed
   journal::Status stop = journal::Status::End;  // why reading stopped
   std::size_t valid_bytes = 0;        // where the good part of the journal ends
+  Limit limit = Limit::None;          // set when a limit, not the journal, ended the replay
 };
 
-// Replays every command up to the first bad record. Returns false only when
-// the header cannot be read, in which case nothing was replayed and
-// out.stop says why. A damaged tail is not a failure: out.stop reports it
-// and everything before it is replayed.
-inline bool replay(const std::uint8_t* data, std::size_t size, Replayed& out) {
+// Replays every command up to the first bad record. Returns false when the
+// header cannot be read or a limit is hit before the book is built, in which
+// case nothing was replayed: out.stop says why for a bad header, out.limit
+// for a limit. A damaged tail is not a failure: out.stop reports it and
+// everything before it is replayed.
+inline bool replay(const std::uint8_t* data, std::size_t size, Replayed& out,
+                   const ReplayLimits& limits = ReplayLimits{}) {
   out = Replayed{};
   journal::Reader reader(data, size);
   out.stop = reader.open();
   if (out.stop != journal::Status::Ok) return false;
 
-  Book book(reader.pool_capacity());
+  if (reader.pool_capacity() > limits.max_pool_capacity) {
+    out.limit = Limit::PoolCapacity;
+    return false;
+  }
+
+  std::optional<Book> book;
   Book::AddResult scratch;
-  scratch.trades.reserve(reader.pool_capacity());
+  try {
+    book.emplace(reader.pool_capacity());
+    scratch.trades.reserve(reader.pool_capacity());
+  } catch (const std::bad_alloc&) {
+    out.limit = Limit::OutOfMemory;
+    return false;
+  }
   Command c;
   while ((out.stop = reader.next(c)) == journal::Status::Ok) {
-    const Outcome o = apply(book, c, scratch);
+    const Outcome o = apply(*book, c, scratch);
     append_events(out.log, out.commands, c, o, scratch.trades);
     ++out.commands;
   }
   out.valid_bytes = reader.valid_bytes();
-  out.book = serialize_book(book);
+  out.book = serialize_book(*book);
   return true;
 }
 
