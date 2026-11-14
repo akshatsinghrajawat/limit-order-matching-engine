@@ -417,7 +417,8 @@ class Book {
     return total;
   }
 
-  // Returns false if the pool is exhausted -- ADR-001/pool.hpp's "clean
+  // Returns false if the pool is exhausted, or if the id map refuses the
+  // entry (the slot goes back to the pool) -- ADR-001/pool.hpp's "clean
   // rejection, not a condition to retry" contract, finally wired up here.
   // Before this fix, an invalid Handle's index() (kNilIndex, i.e.
   // 0xFFFFFFFF) flowed straight into level_append()'s pool_.unchecked()
@@ -428,13 +429,16 @@ class Book {
   bool rest(Side side, Price price, Order& incoming, SeqNo seq) {
     Level& level = level_for_insert(side, price);
     Handle h = pool_.allocate(incoming);
+    if (h.valid() && !id_map_.insert(incoming.order_id, h)) {
+      pool_.free(h);
+      h = Handle{};
+    }
     if (!h.valid()) {
       if (level.head == kNilIndex) erase_level(side, price);
       return false;
     }
     pool_.get(h)->seq_no = seq;  // S6: the core's number for the command that rested it
     level_append(level, pool_, h.index());
-    id_map_.insert(incoming.order_id, h);
     return true;
   }
 

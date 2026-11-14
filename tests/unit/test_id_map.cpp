@@ -4,6 +4,14 @@
 // reachable.
 //
 // CHECK instead of assert so a Release build (-DNDEBUG) still verifies.
+//
+// NDEBUG is defined for this file whatever the build type: insert()'s own
+// assert would end the process before the refusals below could be observed,
+// and the refusals are what a Release build relies on.
+#ifndef NDEBUG
+#define NDEBUG
+#endif
+
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -76,8 +84,8 @@ static void empty_map() {
 static void insert_find_erase_basics() {
   Handles h(4);
   IdMap m(4);
-  m.insert(10, h.all[0]);
-  m.insert(20, h.all[1]);
+  CHECK(m.insert(10, h.all[0]));
+  CHECK(m.insert(20, h.all[1]));
   CHECK(m.size() == 2);
   CHECK(m.contains(10) && m.contains(20) && !m.contains(30));
   CHECK(*m.find(10) == h.all[0]);
@@ -126,9 +134,10 @@ static void churn_matches_the_reference(std::uint64_t seed, Index max_entries, s
 
     switch (mix(s) % 3) {
       case 0:
-        if (!present && ref.size() < max_entries) {
-          m.insert(id, h.all[k]);
-          ref[id] = h.all[k];
+        if (!present) {
+          const bool room = ref.size() < max_entries;
+          CHECK(m.insert(id, h.all[k]) == room);
+          if (room) ref[id] = h.all[k];
         }
         break;
       case 1:
@@ -213,6 +222,84 @@ static void no_operation_allocates() {
   CHECK(after.calls == before.calls);
 }
 
+// An entry beyond max_entries is refused and leaves the table as it was; so
+// is a handle that is not valid. After that, erasing shifts entries back as
+// usual and the freed room is usable.
+static void refusals_leave_the_table_intact(std::uint64_t seed) {
+  const Index n = 8;
+  const Index extra = 40;
+  Handles h(n + extra);
+  IdMap m(n);
+  std::uint64_t s = seed;
+  std::vector<OrderId> ids;
+  for (Index i = 0; i < n; ++i) {
+    ids.push_back(mix(s));
+    CHECK(m.insert(ids.back(), h.all[i]));
+  }
+  CHECK(m.size() == n);
+
+  auto intact = [&](std::size_t from) {
+    CHECK(m.size() == n);
+    for (std::size_t i = from; i < ids.size(); ++i) {
+      const Handle* found = m.find(ids[i]);
+      CHECK(found != nullptr && *found == h.all[i]);
+    }
+  };
+
+  for (Index i = n; i < n + 10; ++i) {
+    const OrderId id = mix(s);
+    CHECK(!m.insert(id, h.all[i]));
+    CHECK(m.find(id) == nullptr);
+    CHECK(m.size() == n);
+  }
+  intact(0);
+
+  // Each removal opens room for one entry and no more.
+  Index next = n;
+  for (int round = 0; round < 30; ++round) {
+    const std::size_t victim = mix(s) % n;
+    CHECK(m.erase(ids[victim]));
+    CHECK(m.size() == n - 1);
+    const OrderId fresh = mix(s);
+    CHECK(m.insert(fresh, h.all[next]));
+    CHECK(!m.insert(mix(s), h.all[next + 1]));
+    ids[victim] = fresh;
+    h.all[victim] = h.all[next];
+    next += 2;
+    if (next + 2 > n + extra) next = n;
+    intact(0);
+  }
+}
+
+static void a_handle_that_is_not_valid_is_refused() {
+  Handles h(2);
+  IdMap m(4);
+  CHECK(m.insert(1, h.all[0]));
+  CHECK(!m.insert(2, Handle{}));
+  CHECK(m.size() == 1 && !m.contains(2) && m.contains(1));
+}
+
+// With room for nothing the table still has slots, and every operation ends.
+static void a_map_with_no_room_refuses_everything() {
+  Handles h(1);
+  IdMap m(0);
+  CHECK(m.slots() >= 2);
+  CHECK(!m.insert(5, h.all[0]));
+  CHECK(!m.insert(0, h.all[0]));
+  CHECK(m.size() == 0 && m.find(5) == nullptr && !m.erase(5));
+}
+
+// Refusing allocates nothing either.
+static void a_refusal_does_not_allocate() {
+  Handles h(5);
+  IdMap m(4);
+  for (Index i = 0; i < 4; ++i) CHECK(m.insert(100 + i, h.all[i]));
+  const auto before = bench::alloc_snapshot();
+  CHECK(!m.insert(200, h.all[4]));
+  const auto after = bench::alloc_snapshot();
+  CHECK(after.calls == before.calls);
+}
+
 int main() {
   table_has_at_least_twice_the_slots();
   empty_map();
@@ -229,6 +316,10 @@ int main() {
   for (std::uint64_t seed = 1; seed <= 20; ++seed) drain_a_full_table(seed);
   sequential_ids_do_not_pile_up();
   no_operation_allocates();
+  for (std::uint64_t seed = 1; seed <= 20; ++seed) refusals_leave_the_table_intact(seed);
+  a_handle_that_is_not_valid_is_refused();
+  a_map_with_no_room_refuses_everything();
+  a_refusal_does_not_allocate();
 
   std::puts("id map ok");
 }

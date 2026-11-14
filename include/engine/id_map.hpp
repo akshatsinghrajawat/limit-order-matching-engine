@@ -5,9 +5,10 @@
 // operation allocates.
 //
 // The table has at least twice as many slots as the most entries it will be
-// asked to hold. That bound is what lets insert() skip any "table full"
-// path: with at most half the slots used, a probe always reaches an empty
-// one, and probe runs stay short.
+// asked to hold, and insert() refuses the entry after the last one. So at
+// least half the slots are always empty: every probe, in find(), insert()
+// and erase(), reaches an empty slot, and probe runs stay short. That is why
+// none of the loops carries a bound of its own.
 //
 // A slot is empty when its handle is the invalid handle, so every order id
 // is a legal key, zero and the maximum included.
@@ -31,6 +32,7 @@ class IdMap {
     while (slots < 2 * static_cast<std::size_t>(max_entries)) slots *= 2;
     table_.resize(slots);
     mask_ = slots - 1;
+    max_entries_ = max_entries;
   }
 
   const Handle* find(OrderId id) const {
@@ -43,16 +45,18 @@ class IdMap {
 
   bool contains(OrderId id) const { return find(id) != nullptr; }
 
-  // The caller guarantees id is absent and that fewer than max_entries are
-  // stored. Book gets both for free: it checks for a duplicate before it
-  // allocates, and it only inserts after the pool handed out a slot.
-  void insert(OrderId id, Handle handle) {
-    assert(handle.valid());
-    assert(size_ < table_.size() / 2);
+  // The caller guarantees id is absent. Returns false, and changes nothing,
+  // for an invalid handle or when max_entries are already stored; the assert
+  // makes the second a bug in a Debug build, the return value makes it
+  // survivable in a Release one.
+  bool insert(OrderId id, Handle handle) noexcept {
+    assert(size_ < max_entries_);
+    if (!handle.valid() || size_ >= max_entries_) return false;
     std::size_t i = home(id);
     while (table_[i].handle.valid()) i = (i + 1) & mask_;
     table_[i] = {id, handle};
     ++size_;
+    return true;
   }
 
   // Removes id and reports whether it was there. Deleting leaves no marker
@@ -102,6 +106,7 @@ class IdMap {
   std::vector<Entry> table_;
   std::size_t mask_ = 0;
   std::size_t size_ = 0;
+  Index max_entries_ = 0;
 };
 
 }  // namespace engine

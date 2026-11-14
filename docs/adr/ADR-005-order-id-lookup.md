@@ -72,8 +72,9 @@ had never been inserted.
   benchmark machine's GCC 15.2.
 - The size rule assumes the caller passes the pool capacity, which `Book`
   does. An `IdMap` built with a smaller bound than the entries it is given
-  would fill, and a lookup of an absent key would then probe forever.
-  `insert` asserts the bound in builds that keep assertions.
+  would fill, and a lookup of an absent key would then probe forever. So
+  `insert` refuses the entry after the last one and returns false, in every
+  build; a Debug build also asserts, because `Book` never gets there.
 - The hash is no defense against ids chosen to collide, which lengthen probe
   runs. The engine takes ids from a trusted gateway.
 

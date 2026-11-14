@@ -251,6 +251,18 @@ check idmap-contains-inverted 1 \
 check idmap-insert-does-not-wrap 1 \
   'while (table_[i].handle.valid()) i = (i + 1) & mask_;' \
   'while (table_[i].handle.valid()) i = i + 1;'
+check idmap-insert-over-capacity-accepted 1 \
+  'if (!handle.valid() || size_ >= max_entries_) return false;' \
+  'if (!handle.valid()) return false;'
+check idmap-insert-refuses-one-early 1 \
+  'size_ >= max_entries_) return false;' \
+  'size_ + 1 >= max_entries_) return false;'
+check idmap-insert-invalid-handle-accepted 1 \
+  'if (!handle.valid() || size_ >= max_entries_) return false;' \
+  'if (size_ >= max_entries_) return false;'
+check idmap-insert-refusal-counted 1 \
+  'if (!handle.valid() || size_ >= max_entries_) return false;' \
+  'if (!handle.valid() || size_ >= max_entries_) { ++size_; return false; }'
 check idmap-insert-not-counted 1 \
   '++size_;' \
   ';'
