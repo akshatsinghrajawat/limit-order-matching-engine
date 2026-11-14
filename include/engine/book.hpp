@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "id_map.hpp"
+#include "invariants.hpp"
 #include "level.hpp"
 #include "pool.hpp"
 #include "price_levels.hpp"
@@ -294,58 +295,12 @@ class Book {
   }
 
   // nullptr when every structural invariant holds, otherwise a description
-  // of the first violation found. A snapshot only follows next_idx, so a
-  // bad prev_idx, a stale level tail, a leaked pool slot or a dangling
-  // id_map_ entry would pass a snapshot diff; this walks all of them.
-  // The book is never crossed: crossing orders trade on arrival, and a
-  // modify that would cross is rejected (ADR-009).
-  const char* invariant_violation() const {
-    if (has_bid() && has_ask() && best_bid() >= best_ask()) return "book is crossed";
-    std::size_t linked = 0;
-    if (const char* v = check_side(bids_, Side::Buy, linked)) return v;
-    if (const char* v = check_side(asks_, Side::Sell, linked)) return v;
-    if (linked != id_map_.size()) return "id_map_ size != orders linked into levels";
-    std::size_t in_use =
-        static_cast<std::size_t>(pool_.capacity()) - pool_.free_slots() - pool_.retired_slots();
-    if (in_use != linked) return "pool slots in use != orders linked into levels";
-    return nullptr;
-  }
+  // of the first violation found. See invariants.hpp.
+  const char* invariant_violation() const { return invariants::violation(pool_, bids_, asks_, id_map_); }
 
  private:
   using BidLevels = PriceLevels<Best::High>;
   using AskLevels = PriceLevels<Best::Low>;
-
-  template <typename Levels>
-  const char* check_side(const Levels& levels, Side side, std::size_t& linked) const {
-    for (std::size_t rank = 0; rank < levels.size(); ++rank) {
-      const Level& level = levels.by_rank(rank);
-      const Price price = level.price;
-      if (rank > 0 && !Levels::better(levels.by_rank(rank - 1).price, price)) {
-        return "price levels not strictly ordered best first";
-      }
-      if (level.head == kNilIndex) return "empty level left in price levels";
-      Index prev = kNilIndex;
-      SeqNo last_seq = 0;
-      for (Index idx = level.head; idx != kNilIndex; idx = pool_.unchecked(idx).next_idx) {
-        if (idx >= pool_.capacity()) return "next_idx out of range";
-        const Order& o = pool_.unchecked(idx);
-        if (o.prev_idx != prev) return "prev_idx does not match traversal";
-        if (o.side != side) return "order on the wrong side";
-        if (o.price != price) return "order price != level price";
-        if (o.qty == 0) return "resting order with qty 0";
-        if (prev != kNilIndex && o.seq_no <= last_seq) return "seq_no not increasing within level";
-        const Handle* mapped = id_map_.find(o.order_id);
-        if (mapped == nullptr || mapped->index() != idx || !pool_.validate(*mapped)) {
-          return "id_map_ entry missing or pointing at another slot";
-        }
-        if (++linked > pool_.capacity()) return "cycle in level list";
-        prev = idx;
-        last_seq = o.seq_no;
-      }
-      if (level.tail != prev) return "level.tail is not the last linked order";
-    }
-    return nullptr;
-  }
 
   template <typename Levels>
   void append_side(const Levels& side, std::vector<RestingOrder>& out) const {

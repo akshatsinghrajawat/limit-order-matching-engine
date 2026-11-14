@@ -130,6 +130,10 @@ if(BUILD_TESTS)
   target_compile_definitions(test_golden PRIVATE GOLDEN_DIR="${CMAKE_SOURCE_DIR}/tests/golden")
   add_test(NAME golden_replay COMMAND test_golden)
 
+  add_executable(test_invariants tests/unit/test_invariants.cpp)
+  target_link_libraries(test_invariants PRIVATE test_support)
+  add_test(NAME unit_invariants COMMAND test_invariants)
+
   add_executable(test_pool tests/unit/test_pool.cpp)
   target_link_libraries(test_pool PRIVATE test_support)
   add_test(NAME unit_pool COMMAND test_pool)

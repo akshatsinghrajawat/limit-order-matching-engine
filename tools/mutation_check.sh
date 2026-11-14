@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Checks that the test suite notices when include/engine/book.hpp,
 # include/engine/id_map.hpp, include/engine/price_levels.hpp,
-# include/engine/pool.hpp, include/engine/types.hpp, include/engine/command.hpp,
+# include/engine/pool.hpp, include/engine/invariants.hpp, include/engine/types.hpp, include/engine/command.hpp,
 # include/engine/journal.hpp or include/engine/replay.hpp is wrong.
 #
 # Each mutant below makes one small change to a copy of one header, rebuilds,
@@ -298,6 +298,53 @@ check pool-retired-not-counted 1 \
 check pool-retired-slot-reused 1 \
   '++retired_;' \
   '++retired_; slots_[idx].next_free = free_head_; free_head_ = idx;'
+
+# The invariant checks (invariants.hpp). Each mutant stops one check from
+# reporting; the state that check exists for then reads as valid or as another
+# violation, and unit_invariants compares the exact message.
+use_target include/engine/invariants.hpp
+check invariants-crossed-unchecked 1 \
+  'return "book is crossed";' \
+  '(void)0;'
+check invariants-levels-unordered-unchecked 1 \
+  'return "price levels not strictly ordered best first";' \
+  '(void)0;'
+check invariants-empty-level-unchecked 1 \
+  'return "empty level left in price levels";' \
+  '(void)0;'
+check invariants-next-idx-range-unchecked 1 \
+  'return "next_idx out of range";' \
+  '(void)0;'
+check invariants-prev-idx-unchecked 1 \
+  'return "prev_idx does not match traversal";' \
+  '(void)0;'
+check invariants-side-unchecked 1 \
+  'return "order on the wrong side";' \
+  '(void)0;'
+check invariants-price-unchecked 1 \
+  'return "order price != level price";' \
+  '(void)0;'
+check invariants-qty-zero-unchecked 1 \
+  'return "resting order with qty 0";' \
+  '(void)0;'
+check invariants-seq-unchecked 1 \
+  'return "seq_no not increasing within level";' \
+  '(void)0;'
+check invariants-id-entry-unchecked 1 \
+  'return "id_map_ entry missing or pointing at another slot";' \
+  '(void)0;'
+check invariants-tail-unchecked 1 \
+  'return "level.tail is not the last linked order";' \
+  '(void)0;'
+check invariants-id-count-unchecked 1 \
+  'return "id_map_ size != orders linked into levels";' \
+  '(void)0;'
+check invariants-pool-count-unchecked 1 \
+  'return "pool slots in use != orders linked into levels";' \
+  '(void)0;'
+check invariants-retired-counted-as-in-use 1 \
+  ' - pool.retired_slots();' \
+  ';'
 
 # The price levels (ADR-003). A mutant that would make the matching loop spin
 # forever, such as one that stops pop_best() from shrinking the array, is
