@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <limits>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -244,6 +245,73 @@ static void an_unreadable_header_is_not_a_limit() {
   CHECK(r.stop == Status::Ok && r.limit == replay::Limit::PoolCapacity);
 }
 
+// The line writer. The buffer is 256 bytes; a line that needs more is
+// formatted again at its full length, and one that cannot be formatted at all
+// throws. Before this, the full length was appended from a 256-byte buffer,
+// so a longer line read past it, and a failed format appended a huge size.
+static std::string written(const char* fmt, const char* text) {
+  std::string out;
+  replay::detail::line(out, fmt, text);
+  return out;
+}
+
+static void the_longest_lines_the_log_writes_fit_the_buffer() {
+  const std::uint64_t top = std::numeric_limits<std::uint64_t>::max();
+  const std::int64_t low = std::numeric_limits<std::int64_t>::min();
+  const std::uint32_t big32 = std::numeric_limits<std::uint32_t>::max();
+  const Side bad_side = static_cast<Side>(255);
+  const TimeInForce bad_tif = static_cast<TimeInForce>(255);
+
+  replay::Outcome o;
+  o.ok = true;
+  o.resting_qty = big32;
+  o.stp_rejected = true;
+  o.pool_exhausted = true;
+  std::vector<Trade> trades(1);
+  trades[0] = Trade{top, top, low, big32, top, top};
+
+  std::string log;
+  replay::append_events(log, std::numeric_limits<std::size_t>::max(),
+                        limit_command(top, bad_side, low, big32, big32, bad_tif), o, trades);
+  replay::append_events(log, std::numeric_limits<std::size_t>::max(), market_command(top, bad_side, big32, big32), o,
+                        {});
+  replay::append_events(log, std::numeric_limits<std::size_t>::max(), modify_command(top, low, big32), o, {});
+  std::size_t start = 0;
+  for (std::size_t end; (end = log.find('\n', start)) != std::string::npos; start = end + 1) {
+    CHECK(end - start < 256);  // so the buffer was enough, and the second pass never ran
+  }
+  CHECK(log.find("tif=invalid(255)") != std::string::npos);
+}
+
+static void a_line_that_does_not_fit_the_buffer_is_written_whole() {
+  for (const std::size_t n : {0u, 1u, 254u, 255u, 256u, 257u, 400u, 5000u}) {
+    const std::string field(n, 'x');
+    CHECK(written("%s", field.c_str()) == field + "\n");
+    CHECK(written("id=%s ok", field.c_str()) == "id=" + field + " ok\n");
+  }
+  std::string out;
+  replay::detail::line(out, "first");
+  replay::detail::line(out, "%s", std::string(401, 'y').c_str());
+  replay::detail::line(out, "last %d", 7);
+  CHECK(out == "first\n" + std::string(401, 'y') + "\nlast 7\n");
+}
+
+static void a_format_that_cannot_be_encoded_throws() {
+  std::string out = "kept\n";
+  bool threw = false;
+  try {
+    replay::detail::line(out, "%ls", L"\u20ac");  // not representable in the C locale
+  } catch (const std::runtime_error& e) {
+    threw = true;
+    CHECK(std::string(e.what()) == "replay: output formatting failed");
+  }
+  if (!threw) {
+    std::puts("replay: wide-character probe accepted by this C library, skipped");
+    return;
+  }
+  CHECK(out == "kept\n");
+}
+
 // A command the journal cannot hold is refused by the writer and never
 // reaches the file, so a journal written around it replays every command that
 // was accepted. Before this, the bad record was written, the reader stopped at
@@ -386,5 +454,8 @@ int main() {
   replay_uses_the_pool_capacity_in_the_header();
   a_capacity_over_the_limit_is_refused_not_clamped();
   an_unreadable_header_is_not_a_limit();
+  the_longest_lines_the_log_writes_fit_the_buffer();
+  a_line_that_does_not_fit_the_buffer_is_written_whole();
+  a_format_that_cannot_be_encoded_throws();
   std::puts("replay ok");
 }

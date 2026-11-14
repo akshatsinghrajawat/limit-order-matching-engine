@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <new>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -66,13 +67,34 @@ namespace detail {
 
 inline void line(std::string& out, const char* fmt, ...) __attribute__((format(printf, 2, 3)));
 
+// Ends a va_list on every path out of line(), including a throw.
+struct VaEnd {
+  va_list& list;
+  ~VaEnd() { va_end(list); }
+};
+
+// Every line the log writes today fits the buffer. One that does not is
+// formatted again into a string of the size vsnprintf reported, from a copy
+// of the arguments, so a longer field can never be cut off or read past the
+// buffer. A negative result is a format that cannot be encoded: it throws
+// instead of appending a line that is not what was asked for.
 inline void line(std::string& out, const char* fmt, ...) {
   char buf[256];
   va_list args;
+  va_list again;
   va_start(args, fmt);
+  va_copy(again, args);
+  const VaEnd end_args{args};
+  const VaEnd end_again{again};
   const int n = std::vsnprintf(buf, sizeof buf, fmt, args);
-  va_end(args);
-  out.append(buf, static_cast<std::size_t>(n));
+  if (n < 0) throw std::runtime_error("replay: output formatting failed");
+  if (static_cast<std::size_t>(n) < sizeof buf) {
+    out.append(buf, static_cast<std::size_t>(n));
+  } else {
+    std::string big(static_cast<std::size_t>(n) + 1, '\0');
+    std::vsnprintf(big.data(), big.size(), fmt, again);
+    out.append(big.data(), static_cast<std::size_t>(n));
+  }
   out.push_back('\n');
 }
 

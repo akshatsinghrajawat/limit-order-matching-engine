@@ -560,6 +560,15 @@ check replay-oom-not-reported 1 \
 check replay-trade-reserve-dropped 1 \
   'scratch.trades.reserve(reader.pool_capacity());' \
   ';'
+check replay-line-ignores-long-lines 1 \
+  'if (static_cast<std::size_t>(n) < sizeof buf) {' \
+  'if (true) {'
+check replay-line-boundary-off-by-one 1 \
+  'if (static_cast<std::size_t>(n) < sizeof buf) {' \
+  'if (static_cast<std::size_t>(n) <= sizeof buf) {'
+check replay-line-ignores-format-error 1 \
+  'if (n < 0) throw std::runtime_error("replay: output formatting failed");' \
+  ';'
 check replay-position-off-by-one 1 \
   'append_events(out.log, out.commands, c, o, scratch.trades);' \
   'append_events(out.log, out.commands + 1, c, o, scratch.trades);'
