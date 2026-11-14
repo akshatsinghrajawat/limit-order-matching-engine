@@ -4,6 +4,14 @@
 // nothing allocates after construction.
 //
 // CHECK instead of assert so a Release build (-DNDEBUG) still verifies.
+//
+// NDEBUG is defined for this file whatever the build type, so a debug-only
+// check inside PriceLevels cannot hide a missing refusal: what is tested is
+// what a Release build does. The sanitizers catch any write past the array.
+#ifndef NDEBUG
+#define NDEBUG
+#endif
+
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -73,13 +81,13 @@ void insert_find_erase_basics() {
   CHECK(levels.empty());
   CHECK(levels.find(100) == nullptr);
 
-  levels.get_or_insert(100).head = 1;
-  levels.get_or_insert(105).head = 2;
-  levels.get_or_insert(95).head = 3;
+  levels.try_get_or_insert(100)->head = 1;
+  levels.try_get_or_insert(105)->head = 2;
+  levels.try_get_or_insert(95)->head = 3;
   CHECK(levels.size() == 3);
 
   // Asking again for an existing price returns that level, not a new one.
-  CHECK(levels.get_or_insert(100).head == 1);
+  CHECK(levels.try_get_or_insert(100)->head == 1);
   CHECK(levels.size() == 3);
 
   CHECK(levels.find(105)->head == 2);
@@ -106,10 +114,10 @@ template <Best B>
 void negative_and_extreme_prices() {
   PriceLevels<B> levels(4);
   const Price lo = std::numeric_limits<Price>::min(), hi = std::numeric_limits<Price>::max();
-  levels.get_or_insert(0).head = 1;
-  levels.get_or_insert(lo).head = 2;
-  levels.get_or_insert(hi).head = 3;
-  levels.get_or_insert(-5).head = 4;
+  levels.try_get_or_insert(0)->head = 1;
+  levels.try_get_or_insert(lo)->head = 2;
+  levels.try_get_or_insert(hi)->head = 3;
+  levels.try_get_or_insert(-5)->head = 4;
   CHECK(levels.size() == 4);
   CHECK(levels.best().price == (B == Best::High ? hi : lo));
   CHECK(levels.at(lo).head == 2 && levels.at(hi).head == 3 && levels.at(-5).head == 4 && levels.at(0).head == 1);
@@ -129,17 +137,20 @@ void churn_matches_the_reference(std::uint64_t seed, std::size_t capacity, Price
   for (int op = 0; op < ops; ++op) {
     const Price p = static_cast<Price>(mix(s) % static_cast<std::uint64_t>(range)) - range / 2;
     switch (mix(s) % 4) {
-      case 0:
-        if (ref.count(p) != 0 || ref.size() < capacity) {
-          Level& l = levels.get_or_insert(p);
-          if (ref.count(p) == 0) {
-            l.head = head_for(p);
-            l.tail = tail_for(p);
+      case 0: {
+        const bool present = ref.count(p) != 0;
+        Level* l = levels.try_get_or_insert(p);
+        CHECK((l != nullptr) == (present || ref.size() < capacity));
+        if (l != nullptr) {
+          if (!present) {
+            l->head = head_for(p);
+            l->tail = tail_for(p);
             ref[p] = Level{p, head_for(p), tail_for(p)};
           }
-          CHECK(l.price == p);
+          CHECK(l->price == p);
         }
         break;
+      }
       case 1:
         if (ref.count(p) != 0) {
           levels.erase(p);
@@ -174,7 +185,7 @@ void fill_then_sweep() {
   while (ref.size() < n) {
     const Price p = static_cast<Price>(mix(s) % 1000);
     if (ref.count(p) == 0) {
-      Level& l = levels.get_or_insert(p);
+      Level& l = *levels.try_get_or_insert(p);
       l.head = head_for(p);
       ref[p] = Level{p, head_for(p), kNilIndex};
     }
@@ -192,13 +203,58 @@ template <Best B>
 void no_operation_allocates() {
   PriceLevels<B> levels(128);
   const bench::AllocSnapshot before = bench::alloc_snapshot();
-  for (Price p = 0; p < 128; ++p) levels.get_or_insert((p * 37) % 128);
+  for (Price p = 0; p < 128; ++p) CHECK(levels.try_get_or_insert((p * 37) % 128) != nullptr);
   for (Price p = 0; p < 128; p += 3) levels.erase((p * 37) % 128);
-  for (Price p = 0; p < 40; ++p) levels.get_or_insert(500 + p);
+  for (Price p = 0; p < 40; ++p) CHECK(levels.try_get_or_insert(500 + p) != nullptr);
   CHECK(levels.find(500) != nullptr);
   levels.pop_best();
   const bench::AllocSnapshot after = bench::alloc_snapshot();
   CHECK(after.calls == before.calls);
+}
+
+// A side that holds max_levels refuses a new price and is left exactly as it
+// was, wherever in the array the price would have gone. A price it already
+// holds is still returned. Erasing one level makes room for exactly one.
+template <Best B>
+void a_full_array_refuses_a_new_price() {
+  for (const Price extra : {Price{10}, Price{70}, Price{130}}) {  // before, between, after the held prices
+    PriceLevels<B> levels(6);
+    Reference<B> ref;
+    for (Price p = 20; p <= 120; p += 20) {
+      Level* l = levels.try_get_or_insert(p);
+      CHECK(l != nullptr);
+      l->head = head_for(p);
+      ref[p] = Level{p, head_for(p), kNilIndex};
+    }
+    check_same(levels, ref);
+
+    CHECK(levels.try_get_or_insert(extra) == nullptr);
+    CHECK(levels.find(extra) == nullptr);
+    check_same(levels, ref);
+
+    Level* held = levels.try_get_or_insert(60);
+    CHECK(held != nullptr && held == levels.find(60) && held->head == head_for(60));
+    check_same(levels, ref);
+
+    levels.erase(60);
+    ref.erase(60);
+    Level* made = levels.try_get_or_insert(extra);
+    CHECK(made != nullptr && made->price == extra && made->head == kNilIndex);
+    made->head = head_for(extra);
+    ref[extra] = Level{extra, head_for(extra), kNilIndex};
+    check_same(levels, ref);
+
+    CHECK(levels.try_get_or_insert(15) == nullptr);
+    CHECK(levels.try_get_or_insert(60) == nullptr);
+    check_same(levels, ref);
+  }
+}
+
+template <Best B>
+void a_side_with_no_room_refuses_everything() {
+  PriceLevels<B> levels(0);
+  CHECK(levels.try_get_or_insert(1) == nullptr);
+  CHECK(levels.empty() && levels.find(1) == nullptr);
 }
 
 template <Best B>
@@ -212,6 +268,8 @@ void run_all() {
   }
   churn_matches_the_reference<B>(7, 1, 6, 1000);
   fill_then_sweep<B>();
+  a_full_array_refuses_a_new_price<B>();
+  a_side_with_no_room_refuses_everything<B>();
   no_operation_allocates<B>();
 }
 

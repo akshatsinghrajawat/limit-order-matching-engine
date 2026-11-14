@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <vector>
 
 #include "id_map.hpp"
@@ -228,8 +229,12 @@ class Book {
     order->qty = new_qty;
     order->seq_no = seq;  // S6: loses priority, takes this command's seq_no
 
-    Level& new_level = level_for_insert(order->side, new_price);
-    level_append(new_level, pool_, h.index());
+    // The old level was erased above if it had emptied, so this order is the
+    // only one of the pool's live orders not yet in a level, and the side has
+    // room for one more level than the pool has orders.
+    Level* new_level = level_for_insert(order->side, new_price);
+    if (new_level == nullptr) std::terminate();
+    level_append(*new_level, pool_, h.index());
     return true;
   }
 
@@ -427,7 +432,9 @@ class Book {
   // price with no prior resting orders -- clean that up on the failure path
   // so a full pool doesn't also leak empty levels into the price levels.
   bool rest(Side side, Price price, Order& incoming, SeqNo seq) {
-    Level& level = level_for_insert(side, price);
+    Level* lvl = level_for_insert(side, price);
+    if (lvl == nullptr) return false;
+    Level& level = *lvl;
     Handle h = pool_.allocate(incoming);
     if (h.valid() && !id_map_.insert(incoming.order_id, h)) {
       pool_.free(h);
@@ -449,8 +456,8 @@ class Book {
                              : (!bids_.empty() && price <= bids_.best().price);
   }
 
-  Level& level_for_insert(Side side, Price price) {
-    return side == Side::Buy ? bids_.get_or_insert(price) : asks_.get_or_insert(price);
+  Level* level_for_insert(Side side, Price price) {
+    return side == Side::Buy ? bids_.try_get_or_insert(price) : asks_.try_get_or_insert(price);
   }
 
   Level& level_for(Side side, Price price) {

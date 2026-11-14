@@ -81,18 +81,19 @@ class PriceLevels {
     return *found;
   }
 
-  // Returns the level at price, creating an empty one if there is none.
-  // The reference is good until the next insert or erase: both can move
-  // elements.
-  Level& get_or_insert(Price price) {
+  // Returns the level at price, creating an empty one if there is none, or
+  // nullptr when there is none and the array already holds max_levels.
+  // Nothing changes on nullptr. The pointer is good until the next insert or
+  // erase: both can move elements.
+  Level* try_get_or_insert(Price price) noexcept {
     Level* at = lower(price);
-    if (at != end() && at->price == price) return *at;
+    if (at != end() && at->price == price) return at;
+    if (count_ >= levels_.size()) return nullptr;
 
-    assert(count_ < levels_.size());
     std::copy_backward(at, end(), end() + 1);
     ++count_;
     *at = Level{price, kNilIndex, kNilIndex};
-    return *at;
+    return at;
   }
 
   // The level at price must exist and should be empty.

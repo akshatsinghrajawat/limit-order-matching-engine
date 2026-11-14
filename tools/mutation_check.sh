@@ -299,8 +299,17 @@ check levels-find-ignores-price 1 \
   'return at != end() && at->price == price ? at : nullptr;' \
   'return at != end() ? at : nullptr;'
 check levels-duplicate-level 1 \
-  'if (at != end() && at->price == price) return *at;' \
-  'if (false) return *at;'
+  'if (at != end() && at->price == price) return at;' \
+  'if (false) return at;'
+check levels-insert-ignores-capacity 1 \
+  'if (count_ >= levels_.size()) return nullptr;' \
+  ';'
+check levels-insert-capacity-off-by-one 1 \
+  'if (count_ >= levels_.size()) return nullptr;' \
+  'if (count_ > levels_.size()) return nullptr;'
+check levels-refusal-still-inserts 1 \
+  'if (count_ >= levels_.size()) return nullptr;' \
+  'if (count_ >= levels_.size()) { ++count_; return nullptr; }'
 check levels-insert-does-not-shift 1 \
   'std::copy_backward(at, end(), end() + 1);' \
   ';'
