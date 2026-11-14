@@ -305,7 +305,8 @@ class Book {
     if (const char* v = check_side(bids_, Side::Buy, linked)) return v;
     if (const char* v = check_side(asks_, Side::Sell, linked)) return v;
     if (linked != id_map_.size()) return "id_map_ size != orders linked into levels";
-    std::size_t in_use = static_cast<std::size_t>(pool_.capacity()) - pool_.free_slots();
+    std::size_t in_use =
+        static_cast<std::size_t>(pool_.capacity()) - pool_.free_slots() - pool_.retired_slots();
     if (in_use != linked) return "pool slots in use != orders linked into levels";
     return nullptr;
   }

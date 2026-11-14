@@ -68,7 +68,9 @@ inline std::uint32_t crc32(const std::uint8_t* data, std::size_t n) {
 }
 
 // Writes the 20-byte header. pool_capacity is recorded because replay has to
-// build a book of the same size: a full pool changes what the book does.
+// build a book of the same size: a full pool changes what the book does. It
+// counts physical slots; a slot retired at its maximum generation (pool.hpp)
+// is not usable, and replaying the same commands retires the same slots.
 inline void encode_header(Index pool_capacity, std::uint8_t out[kHeaderSize]) {
   for (int i = 0; i < 8; ++i) out[i] = static_cast<std::uint8_t>(kMagic[i]);
   detail::put(out + 8, kVersion, 4);

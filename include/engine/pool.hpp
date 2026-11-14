@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <cstdint>
 #include <limits>
 #include <type_traits>
@@ -27,7 +28,7 @@ class Handle {
   friend bool operator!=(Handle a, Handle b) { return !(a == b); }
 
  private:
-  template <typename T>
+  template <typename, std::uint32_t>
   friend class FixedPool;  // only a pool may mint a handle into itself
   explicit Handle(std::uint64_t v) : value_(v) {}
   static constexpr std::uint64_t kNil() {
@@ -42,8 +43,17 @@ class Handle {
 // free slot costs nothing beyond what the slot already reserved; this only
 // works because T's lifetime is never actually run (no ctor/dtor calls),
 // which is why the pool is restricted to trivial T.
-template <typename T>
+//
+// A slot's generation runs 0 .. MaxGen - 1 while the slot is in service. A
+// slot freed at generation MaxGen - 1 is retired instead: its generation
+// becomes MaxGen, it never returns to the free list, and no handle with that
+// generation validates. The 32-bit counter therefore cannot wrap back to a
+// value an old handle still carries. Retired slots are lost capacity, so
+// the number a pool can hold is capacity() - retired_slots(). The default
+// MaxGen is the largest the handle can carry; tests pick small ones.
+template <typename T, std::uint32_t MaxGen = std::numeric_limits<std::uint32_t>::max()>
 class FixedPool {
+  static_assert(MaxGen >= 1, "a slot needs at least one live generation");
   static_assert(std::is_trivially_copyable_v<T> &&
                     std::is_trivially_destructible_v<T>,
                 "FixedPool never constructs or destroys T — it treats slot "
@@ -75,9 +85,15 @@ class FixedPool {
   void free(Handle h) {
     if (!validate(h)) return;
     Index idx = h.index();
-    ++generation_[idx];
-    slots_[idx].next_free = free_head_;
-    free_head_ = idx;
+    const std::uint32_t g = generation_[idx];
+    if (g + 1 < MaxGen) {
+      generation_[idx] = g + 1;
+      slots_[idx].next_free = free_head_;
+      free_head_ = idx;
+    } else {
+      generation_[idx] = MaxGen;
+      ++retired_;
+    }
   }
 
   T* get(Handle h) {
@@ -88,7 +104,7 @@ class FixedPool {
   }
 
   bool validate(Handle h) const {
-    return h.valid() && h.index() < slots_.size() &&
+    return h.valid() && h.index() < slots_.size() && h.generation() < MaxGen &&
            h.generation() == generation_[h.index()];
   }
 
@@ -105,9 +121,17 @@ class FixedPool {
   // currently occupied (e.g. from walking an intrusive list, which only
   // tracks Index per ADR-004). free()/get() need a generation-checked
   // Handle, not a bare index -- this is the bridge between the two.
-  Handle handle_of(Index idx) const { return make_handle(idx, generation_[idx]); }
+  // The slot's current generation is used as is, so the handle of a retired
+  // slot carries MaxGen and fails validate().
+  Handle handle_of(Index idx) const {
+    assert(idx < slots_.size());
+    return make_handle(idx, generation_[idx]);
+  }
 
   Index capacity() const { return static_cast<Index>(slots_.size()); }
+
+  // Slots that reached MaxGen and left service for good.
+  Index retired_slots() const { return retired_; }
 
   // O(capacity), for invariant checks only. Returns capacity + 1 if the
   // free list cycles, so a corrupted list reads as a violation instead of
@@ -134,6 +158,7 @@ class FixedPool {
   std::vector<Slot> slots_;
   std::vector<std::uint32_t> generation_;
   Index free_head_ = kNilIndex;
+  Index retired_ = 0;
 };
 
 }  // namespace engine

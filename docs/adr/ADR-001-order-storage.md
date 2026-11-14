@@ -37,3 +37,22 @@ failure mode conformance tests 8b and 8c exist to force.
 ## Status
 
 Accepted at M0 (design stage) — implementation and unit tests target M1.
+
+## Addendum, 2026-11-14: retiring a slot at the maximum generation
+
+The generation is 32 bits, so a slot freed 2^32 times would wrap to a value
+an old handle for it still carries, and that handle would validate against
+whatever order the slot holds then. `FixedPool<T, MaxGen>` rules that out: a
+slot freed at generation `MaxGen - 1` is retired. Its stored generation
+becomes `MaxGen`, it is not put back on the free list, and `validate()`
+refuses any handle whose generation is `MaxGen` or more. `handle_of()` still
+returns a handle for a retired slot, carrying `MaxGen`, which then fails
+`validate()`. The default `MaxGen` is `UINT32_MAX`; tests use 1, 2 and 3.
+
+A retired slot is capacity lost for good, so the capacity the journal header
+records and the `Book` is built with is the number of physical slots, and
+what the pool can hold is `capacity() - retired_slots()`. `Book`'s
+invariant check counts retired slots as neither free nor in use. A slot
+reaches the default maximum only after 4,294,967,295 frees of one slot.
+Replaying the same journal frees the same slots the same number of times, so
+it retires the same slots.

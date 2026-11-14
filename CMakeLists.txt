@@ -130,6 +130,10 @@ if(BUILD_TESTS)
   target_compile_definitions(test_golden PRIVATE GOLDEN_DIR="${CMAKE_SOURCE_DIR}/tests/golden")
   add_test(NAME golden_replay COMMAND test_golden)
 
+  add_executable(test_pool tests/unit/test_pool.cpp)
+  target_link_libraries(test_pool PRIVATE test_support)
+  add_test(NAME unit_pool COMMAND test_pool)
+
   add_executable(test_price_levels tests/unit/test_price_levels.cpp)
   target_link_libraries(test_price_levels PRIVATE test_support alloc_counter)
   add_test(NAME unit_price_levels COMMAND test_price_levels)

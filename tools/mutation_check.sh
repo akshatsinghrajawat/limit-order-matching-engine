@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Checks that the test suite notices when include/engine/book.hpp,
 # include/engine/id_map.hpp, include/engine/price_levels.hpp,
-# include/engine/types.hpp, include/engine/command.hpp,
+# include/engine/pool.hpp, include/engine/types.hpp, include/engine/command.hpp,
 # include/engine/journal.hpp or include/engine/replay.hpp is wrong.
 #
 # Each mutant below makes one small change to a copy of one header, rebuilds,
@@ -278,6 +278,26 @@ check idmap-no-backward-shift 1 \
 check idmap-shift-skips-home-slot 1 \
   '>= ((i - hole) & mask_)) {' \
   '> ((i - hole) & mask_)) {'
+
+# Slot retirement at the maximum generation (ADR-001). The pool is
+# instantiated with small maximums in test_pool.cpp, so these are killed
+# there; the engine itself never reaches the default maximum in a test run.
+use_target include/engine/pool.hpp
+check pool-sentinel-not-stored 1 \
+  'generation_[idx] = MaxGen;' \
+  ';'
+check pool-retires-one-generation-late 1 \
+  'if (g + 1 < MaxGen) {' \
+  'if (g + 1 <= MaxGen) {'
+check pool-validate-accepts-sentinel 1 \
+  'h.index() < slots_.size() && h.generation() < MaxGen &&' \
+  'h.index() < slots_.size() &&'
+check pool-retired-not-counted 1 \
+  '++retired_;' \
+  ';'
+check pool-retired-slot-reused 1 \
+  '++retired_;' \
+  '++retired_; slots_[idx].next_free = free_head_; free_head_ = idx;'
 
 # The price levels (ADR-003). A mutant that would make the matching loop spin
 # forever, such as one that stops pop_best() from shrinking the array, is
