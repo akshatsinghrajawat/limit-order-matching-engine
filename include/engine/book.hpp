@@ -30,8 +30,8 @@ struct Trade {
 //
 // Scope: limit orders (GTC/IOC/FOK) and market orders -- insert, cross,
 // partial fill, cancel, modify (S2), self-trade prevention (S3), S5's
-// time-in-force variants. Not implemented yet: the oracle/differential
-// fuzzer (M2), journal/replay (M3+).
+// time-in-force variants. Journaling and replay are in journal.hpp and
+// replay.hpp; the reference model is in tests/support/oracle.hpp.
 class Book {
  public:
   // Each side gets room for one level more than the pool has orders, because
@@ -86,9 +86,9 @@ class Book {
   // already-executed trades happened anyway (not atomic). So
   // available_before_self_trade() below walks the book the *same way*
   // cross() does -- same price bound, same per-order self-match stop --
-  // and both S8 (nothing can insert between pre-check and fill, this
-  // engine is single-threaded and a command runs to completion) and this
-  // shared-walk agreement are what make the atomicity claim actually true,
+  // and both S8 (nothing can insert between pre-check and fill: this
+  // engine is single-threaded, a command runs to completion, and the entry
+  // points do not throw, ADR-012) and this shared-walk agreement are what make the atomicity claim actually true,
   // not just asserted (test 14b exercises the disagreement this would
   // cause if the pre-check ignored STP).
   void add_limit_order(AddResult& result, OrderId order_id, Side side, Price price, Qty qty,

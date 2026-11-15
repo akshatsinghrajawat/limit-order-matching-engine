@@ -9,8 +9,8 @@
 # fails. A survivor means either a gap in the tests or an equivalent
 # mutant; both need a look. The working tree is never modified.
 #
-# Builds are Debug because test_basic.cpp uses assert(), which -DNDEBUG
-# removes. Sanitizers follow the project default (on); set
+# Builds are Debug so the assert() calls in the engine headers stay enabled;
+# -DNDEBUG removes them. Sanitizers follow the project default (on); set
 # ENABLE_SANITIZERS=OFF where the toolchain can't link them (MSYS2).
 #
 # Exit status: 0 all killed, 1 a mutant survived, 2 the check itself broke

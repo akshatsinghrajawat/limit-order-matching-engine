@@ -26,6 +26,8 @@ Where something is slow, unmeasured or unfinished, this README says so. Section 
 | Memory | Fixed-size pool allocated once at construction. No `new`, `delete` or `shared_ptr` in the engine |
 | Allocation on the hot path | 0 per command on workload W1 after warm-up, enforced by a test |
 | Determinism | Output is a pure function of the command sequence. A golden journal and golden event log are compared byte for byte in CI |
+| Invalid input | A command whose kind, side or time in force does not exist is refused, takes no sequence number and changes nothing, in the book, the journal writer and replay ([ADR-011](docs/adr/ADR-011-command-validation.md)) |
+| Failure | The six `Book` entry points that change the book do not throw, so a command is never left half applied. If one ever failed, the process ends and replaying the journal recovers the state ([ADR-012](docs/adr/ADR-012-failure-and-recovery.md)) |
 | Verification | Conformance tests, differential fuzzing against an independent oracle, exhaustive state-space search, mutation testing, ASan and UBSan on every test build |
 | Dependencies | Standard library and CMake only |
 
@@ -34,6 +36,8 @@ Where something is slow, unmeasured or unfinished, this README says so. Section 
 ## 2. Status
 
 M0 to M4 are done except the crash-recovery test. The first three allocation-removal steps (O1 to O3) are done and measured on a pinned core: throughput is up about 15% and the hot path allocates nothing, but the tail above p99.9 got about four times worse at O2 and has not been explained yet (see [section 10](#10-performance)).
+
+After that came an 18-commit hardening series (commit subjects start with `M5:`): invalid commands refused, a fail-stop contract, bounded replay, capacity checks that hold in release builds, retirement of pool slots whose generation runs out, invariant checks with tests of their own, and an early exit in the FOK pre-check. Its cost was measured on a pinned core against the commit before the series: W1 throughput is unchanged, the median latency of a limit order is about 3 ns (2.6%) higher, and the other W1 figures are within the run-to-run spread ([section 10](#10-performance)).
 
 | Milestone | Scope | State |
 | --- | --- | --- |
@@ -44,6 +48,7 @@ M0 to M4 are done except the crash-recovery test. The first three allocation-rem
 | M4 | Journal format, replay, golden-file CI | done |
 | M4 | Crash-recovery test (SIGKILL at random journal offsets) | not started |
 | M5 | O1 to O3: remove every hot-path allocation | done and measured (pinned core) |
+| M5 | Hardening series: input validation, fail-stop, bounded replay, capacity checks, slot retirement, invariant tests, FOK early exit | done and measured (pinned core): limit p50 +2.6%, deep FOK p50 about 100x lower |
 | Next | Find the cause of the p99.9 increase that arrived with O2 | not started |
 | Later | Page-table price levels (needs a price band in the spec) | not started, motivation weakened by the O3 measurements |
 | Later | SPSC ring buffers around the core, cache-line layout, prefetching, ingress batching | not started |
@@ -57,8 +62,8 @@ ctest --test-dir build --output-on-failure
 ```
 
 - Header-only engine in `include/engine/`. Requires a C++17 compiler (developed on GCC 13 to 15, CI on Ubuntu 26.04).
-- Sanitizers are **on by default** (`-fsanitize=address,undefined`). Determinism and memory safety are part of the spec (S7), not an extra. Pass `-DENABLE_SANITIZERS=OFF` for benchmark builds only.
-- `ctest` runs 16 test programs in under a minute on a laptop. The long runs live in CI: 100 seeds x 1,000,000 commands of differential fuzz, the full-depth exhaustive search, and the mutation check.
+- Sanitizers are **on by default** (`-fsanitize=address,undefined`). Determinism and memory safety are part of the spec (S7), not an extra. UBSan is fatal (`-fno-sanitize-recover=all`), so an undefined-behaviour report fails the test instead of printing and carrying on; a test that triggers one on purpose checks that. Pass `-DENABLE_SANITIZERS=OFF` for benchmark builds only.
+- `ctest` runs 22 test programs in under a minute on a laptop. The long runs live in CI: 100 seeds x 1,000,000 commands of differential fuzz, the full-depth exhaustive search, and the mutation check.
 
 ## 4. Worked example
 
@@ -81,6 +86,7 @@ book.add_limit_order(r, 8, Side::Sell, 100, 5, 13);                       // res
 book.modify_order(4, 100, 30);                                             // would trade: rejected
 book.modify_order(4, 98, 10);                                              // reposition: applied
 book.cancel_order(4);
+book.cancel_order(4);                                                      // already gone: false
 
 Book other(16);                                                            // self-trade prevention
 other.add_limit_order(r, 1, Side::Sell, 150, 5, /*account=*/20);
@@ -127,17 +133,27 @@ All rules live in [`docs/spec.md`](docs/spec.md) (S1 to S8). Anything the first 
 
 | Command | Effect |
 | --- | --- |
-| `add_limit_order(id, side, price, qty, account, tif)` | Crosses against the opposite side while the price allows, then rests the residual if `tif` is GTC |
+| `add_limit_order(id, side, price, qty, account, tif)` | Crosses against the opposite side while the price allows, then rests the residual if `tif` is GTC. A side or `tif` that is not one of the enum values is refused (below) |
 | `add_market_order(id, side, qty, account)` | No price bound. Fills until the quantity is exhausted or the book is empty. The remainder is cancelled |
 | `modify_order(id, new_price, new_qty)` | Repositions a resting order. Never trades |
 | `cancel_order(id)` | Removes a resting order. Returns false for an unknown, filled or already-cancelled id |
+
+### Invalid commands ([ADR-011](docs/adr/ADR-011-command-validation.md))
+
+A command is valid when its kind is limit, market, cancel or modify, and, for a limit or market order, its side is buy or sell, and, for a limit order, its time in force is GTC, IOC or FOK. An out-of-range command is refused at ingress:
+
+- `Book` returns without taking a sequence number, so the next valid command gets the number it would have had. Nothing rests, nothing trades, the book is unchanged.
+- `journal::Writer::append` returns `Invalid` and writes nothing, and the writer stays usable. `Reader` rejects the same values as `BadKind` or `BadField`, so what the writer produces and what the reader accepts agree.
+- A record holding such a value is never applied by replay: `Reader` stops before it and reports `BadKind` or `BadField`. `replay::apply` on a command built in memory does nothing, and the event-log formatter prints the value as `side=invalid(2)` or `tif=invalid(3)` instead of as sell or fok.
+
+Zero quantity and a duplicate id are different: they are valid commands that fail, they take a sequence number, and they are rejected as before (ADR-009).
 
 ### Matching rules (S5, S6)
 
 - **Price-time priority.** The best opposite level is matched first. Within a level, the order that arrived first fills first. "Arrived" means accepted by the engine, not received by a queue in front of it.
 - **Fill price.** Every trade executes at the resting order's price, never the incoming order's.
 - **Partial fills.** A partly filled resting order stays at the front of its level with its original priority.
-- **GTC / IOC / FOK.** GTC rests any residual. IOC cancels it. FOK first checks how much is available at its limit, and if that is less than the order's quantity it is rejected whole, without touching the book.
+- **GTC / IOC / FOK.** GTC rests any residual. IOC cancels it. FOK first checks how much is available at its limit, and if that is less than the order's quantity it is rejected whole, without touching the book. The available quantity is summed in 64 bits, so two resting orders of 2^31 lots do not wrap to zero, and the walk stops as soon as the order's quantity is covered.
 - **FOK and self-trade prevention agree.** The FOK pre-check walks the book the same way the crossing loop does, including stopping at a self-match. A pre-check that ignored this would say yes, then cross, then stop partway and leave a partial fill behind. Conformance test 14b exists for exactly that case.
 - **Pool full.** If a limit order's residual cannot rest because the pool is full, only the residual is dropped and flagged (`pool_exhausted`). Trades it already made stand.
 
@@ -157,7 +173,14 @@ When an incoming order reaches a resting order with the same account, the incomi
 
 - The core assigns `seq_no` itself, one per command, in the order commands are processed. There is exactly one source of ordering truth, and producers never supply it.
 - Every command takes a sequence number whether or not it changes the book, so a command's number is its position in the input. Trades carry the number of the command that made them. A resting order carries the number of the command that rested or last repositioned it.
-- Each command runs to completion before the next starts. This is atomic by construction (one thread), not by a lock. Any future change to the dequeue loop (for example ingress batching) must state in its ADR how it preserves this.
+- Each command runs to completion before the next starts. This is atomic by construction (one thread), not by a lock, and a command cannot stop part way because the entry points do not throw (next section). Any future change to the dequeue loop (for example ingress batching) must state in its ADR how it preserves this.
+
+### Failure and recovery (S8, [ADR-012](docs/adr/ADR-012-failure-and-recovery.md))
+
+- The six `Book` entry points that change the book (`add_limit_order` and `add_market_order` in two forms each, `modify_order`, `cancel_order`) are `noexcept`. If something did throw, the command would be half applied, and nothing in the book could say which half. The process ends in `std::terminate` instead.
+- The pool, id map and level arrays never grow. The one thing a command can grow is `AddResult::trades`, and a sweep makes at most one trade per resting order, so reserving the pool capacity once at startup means no command allocates. `replay::replay` and the reference loop in `tests/support/journal_loop.hpp` both do this.
+- The loop appends a command to the journal and applies it only if the append succeeded. Recovery is replay: after a stop, replaying the journal gives the state an uninterrupted run reaches.
+- What this does not cover: the by-value overloads still allocate and are not `noexcept`, nothing is `fsync`ed, and a journal cannot be reopened for appending (section 11).
 
 ### Determinism rules (S7)
 
@@ -195,25 +218,27 @@ The planned pipeline is deliberately last, so concurrency is added to a core tha
 | Piece | What it is | Why |
 | --- | --- | --- |
 | `FixedPool<Order>` | One vector allocated at construction, never resized. Free slots form an intrusive list threaded through the slots themselves | No allocator calls. Direct indexed access makes cancel and modify O(1) |
-| `Handle` | 64 bits: pool index in the low 32, generation in the high 32. The generation increments when a slot is freed | A stale handle fails validation instead of silently aliasing whatever order now occupies the slot. Tests 8b and 8c force this case |
+| `Handle` | 64 bits: pool index in the low 32, generation in the high 32. The generation increments when a slot is freed | A stale handle fails validation instead of silently aliasing whatever order now occupies the slot. Tests 8b and 8c force this case. A slot whose generation would reach the maximum is retired and never reused, so a handle cannot come back to life after 2^32 frees ([ADR-001](docs/adr/ADR-001-order-storage.md)) |
 | `Order` | 48 bytes (measured), hot fields first: price, qty, next, prev, side. Cold fields after: id, account, seq_no | Under one 64-byte cache line, so a separate hot/cold array split would only add indirection |
 | `Level` | `price`, `head`, `tail` (pool indices) | An order's links live in the order itself, so a level is three words |
 | FIFO per level | Intrusive doubly linked list through pool slots | Append, cancel and fill-from-front are O(1) with no node allocation |
-| `IdMap` | Flat open-addressed table of 16-byte entries. Power-of-two size at least twice the pool capacity, linear probing, splitmix64 mixing, backward-shift erase, never grows | Replaced `std::unordered_map`, which allocated a node per insert. No tombstones, so cancel-heavy workloads do not lengthen probe runs |
-| `PriceLevels` | One array per side sorted worst to best, so the best level is the last element. Allocated once for pool capacity + 1 levels | Matching touches the best level and sweeps remove from that end, so both are O(1) with no shifting. **Interim container, see below** |
+| `IdMap` | Flat open-addressed table of 16-byte entries. Power-of-two size at least twice the pool capacity, linear probing, splitmix64 mixing, backward-shift erase, never grows. An insert past its capacity is refused in release builds too, not only asserted | Replaced `std::unordered_map`, which allocated a node per insert. No tombstones, so cancel-heavy workloads do not lengthen probe runs |
+| `PriceLevels` | One array per side sorted worst to best, so the best level is the last element. Allocated once for pool capacity + 1 levels. A new level is refused when the array is full, in release builds too | Matching touches the best level and sweeps remove from that end, so both are O(1) with no shifting. **Interim container, see below** |
 
 ### The matching loop
 
 For an incoming limit order the core does this, in order:
 
-1. Take the next `seq_no`. Reject a zero quantity or an id that already rests.
-2. If FOK, run the read-only pre-check. Reject whole if the available quantity is short.
+1. Reject a side or time in force that does not exist, before anything else, with no sequence number. Otherwise take the next `seq_no`. Reject a zero quantity or an id that already rests.
+2. If FOK, run the read-only pre-check. Reject whole if the available quantity is short. The walk stops once the quantity is covered.
 3. Walk the opposite side from its best level. At each level, walk the FIFO from the head. For each maker: stop on a self-match, otherwise fill `min(incoming, maker)` at the maker's price and record the trade. A fully filled maker is unlinked, removed from the id map and freed. A drained level is popped from the array end.
 4. If the order is GTC with a residual and no self-match stopped it, allocate a slot, append it to its level (creating the level if needed) and register its id.
 
 ```mermaid
 flowchart TD
-    A["Take next seq_no"] --> B{"qty = 0 or<br/>id already resting?"}
+    V{"Side and tif<br/>valid?"} -- no --> R0["Refuse: no seq_no,<br/>book untouched"]
+    V -- yes --> A["Take next seq_no"]
+    A --> B{"qty = 0 or<br/>id already resting?"}
     B -- yes --> R["Reject, book untouched"]
     B -- no --> C{"FOK?"}
     C -- yes --> D["Read-only pre-check<br/>same walk as the sweep"]
@@ -247,12 +272,13 @@ flowchart TD
 | Rest at a new level | O(log L) search plus O(L) memmove |
 | Match against the touch | O(1) per fill, because the best level is the last array element |
 | Modify | O(1) for a reduce, otherwise cancel plus rest cost |
+| FOK pre-check | O(orders it walks): it stops when the quantity is covered, at the first level that does not cross, or at a self-match. It reads the same orders the sweep that follows will fill, plus at most one more |
 
 The O(L) shifts are the known worst case of the price-level container. On W1 they were not the bottleneck (section 10), so the page table that would remove them is deferred until a measurement says they matter.
 
 ### Memory behaviour
 
-The pool, id table and level arrays are sized from one number, the pool capacity, when the `Book` is built. Nothing grows afterwards. Level arrays hold capacity + 1 levels per side because the resting step creates a level before it learns the pool is full. A full pool is a clean rejection, not a crash. The id table costs 16 bytes per entry at twice the pool capacity, so a pool of 65,536 orders gets a 2 MiB table.
+The pool, id table and level arrays are sized from one number, the pool capacity, when the `Book` is built. Nothing grows afterwards. Level arrays hold capacity + 1 levels per side because the resting step creates a level before it learns the pool is full. A full pool is a clean rejection, not a crash, and so is a full id table or a full level array: each refuses the insert and the order is not rested. Because all three are sized from the same number, the last two cannot be reached through `Book`; they are tested on the containers directly (section 11). The id table costs 16 bytes per entry at twice the pool capacity, so a pool of 65,536 orders gets a 2 MiB table.
 
 ## 7. Design decisions and the alternatives that lost
 
@@ -274,6 +300,10 @@ Each decision has an ADR with the numbers behind it. The right column is what wa
 | No `fsync` per command ([ADR-010](docs/adr/ADR-010-journal-format.md)) | `fsync` each record | A flush survives process death. `fsync` costs a disk round trip per command and only buys power-loss safety, which is not claimed |
 | Sorted-array levels ([ADR-003](docs/adr/ADR-003-price-level-container.md)) | `std::map` (kept as the baseline) | `std::map` was the last allocation source. The array removes it, and on the pinned-core W1 run it also lowered median and p99 latency. Its worst case, a deep book with a level erased far from the touch, shifts kilobytes (section 10) |
 | Reject a crossing modify ([ADR-009](docs/adr/ADR-009-spec-gaps.md)) | Let modify trade | Keeps the book never-crossed and keeps modify a pure reposition |
+| Refuse a command with an invalid side or time in force, before it takes a sequence number ([ADR-011](docs/adr/ADR-011-command-validation.md)) | Treat any other value as a sell or as IOC | A value outside the enum is not a command, so it must not change the numbering of the commands after it, in the book or in a replay |
+| End the process if a command cannot complete ([ADR-012](docs/adr/ADR-012-failure-and-recovery.md)) | Catch the exception and undo the half-applied command | Undo needs a record on every command, in the path the benchmark measures, to cover an event the startup reserve already removes. The journal already holds what a restart needs |
+| Retire a pool slot at the maximum generation ([ADR-001](docs/adr/ADR-001-order-storage.md)) | Let the generation wrap | A wrapped generation makes a very old handle valid again. A retired slot is one slot lost per 2^32 frees of that slot |
+| Bound what replay allocates ([ADR-010](docs/adr/ADR-010-journal-format.md)) | Trust the header and the file | The header names the pool size and the file length decides the log length, so a damaged or hostile journal could exhaust memory before replay reported anything |
 
 ## 8. Verification
 
@@ -292,29 +322,33 @@ flowchart TB
     end
     subgraph guard["2. The tests must be able to fail"]
         direction LR
-        mut["84 injected<br/>single-line faults"] --> suite["Test suite: conformance, differential,<br/>golden bytes, zero allocation, ASan and UBSan"] --> kill["Each fault must<br/>break some test"]
+        mut["163 injected<br/>single-line faults"] --> suite["Test suite: conformance, differential,<br/>golden bytes, zero allocation, ASan and UBSan"] --> kill["Each fault must<br/>break some test"]
     end
     diff --> guard
 ```
 
 | Layer | What it checks | Where |
 | --- | --- | --- |
-| Conformance tests (1 to 19, with variants 8b, 8c, 12b, 12c, 12d, 14b) | Resting, crossing, sweeps, partial fills, FIFO, cancel, modify, IOC, FOK, market, self-trade prevention, invalid input, stale handles, pool exhaustion | `tests/conformance/` |
+| Conformance tests (1 to 19, with variants 8b, 8c, 12b, 12c, 12d, 14b, 14c, 14d, 15b, 18b, 18c) | Resting, crossing, sweeps, partial fills, FIFO, cancel, modify, IOC, FOK (including 64-bit sums and the early exit), market, self-trade prevention, invalid input, invalid side and time in force, stale handles, pool exhaustion | `tests/conformance/` |
 | Reference oracle | A flat, linear-scan model of the spec with no pool, handles or lists | `tests/support/oracle.hpp` |
 | Differential fuzz (test 20) | Seeded random streams through engine and oracle in lockstep, comparing every result and periodically the full book. CI: 100 seeds x 1,000,000 commands in an optimized sanitized build. Zero divergences. The generator must actually produce rejected crossing modifies | `tests/fuzz/fuzz_diff.cpp` |
 | Exhaustive search (test 21) | Every command sequence to a fixed depth over a small alphabet, three passes, about 137 million prefixes at full depth | `tests/fuzz/exhaustive_diff.cpp` |
-| Invariant checker | After commands: list links agree in both directions, tails are right, no cycles, no empty levels, levels strictly ordered, each order sits at its own price and side, no zero-quantity resting order, sequence numbers increase within a level, the id map matches the pool exactly, pool slots in use equal linked orders, and the book is not crossed | `Book::invariant_violation()` |
-| Mutation testing | 84 hand-written single-line faults in the engine headers. Each is applied to a copy, rebuilt, and the suite must fail. All 84 killed. A survivor fails CI | `tools/mutation_check.sh` |
+| Invariant checker | After commands: list links agree in both directions, tails are right, no cycles, no empty levels, levels strictly ordered, each order sits at its own price and side, no zero-quantity resting order, sequence numbers increase within a level, the id map matches the pool exactly, pool slots in use equal linked orders (retired slots excluded), and the book is not crossed | `include/engine/invariants.hpp`, called through `Book::invariant_violation()` |
+| Invariant checker tests | Each reachable violation message is produced from a deliberately corrupted pool, level array or id map and compared by exact text, so a check that is deleted or inverted fails a test. The cycle message is unreachable behind the earlier link check and is documented as such | `tests/unit/test_invariants.cpp` |
+| Unit tests | `FixedPool` generation transitions and retirement, `IdMap` and `PriceLevels` capacity refusals (compiled with `NDEBUG` so the release behaviour is what is tested), journal encode, decode and writer status, `load` bounds | `tests/unit/` |
+| Fail-stop (`unit_fail_stop`) | `noexcept` on the six entry points, zero allocation and zero throws under a failing allocator for worst-case sweeps and a self-trade mid-sweep, replay equal to an uninterrupted loop for every stopping point up to 120 commands, and a forked death test for the terminate path | `tests/unit/test_fail_stop.cpp` |
+| Mutation testing | 163 hand-written single-line faults in nine engine headers. Each is applied to a copy, rebuilt, and the suite must fail. All 163 killed. A survivor fails CI, and so does a pattern that no longer matches its header | `tools/mutation_check.sh` |
 | Determinism (tests 22, 23) | Replay is identical twice and equal to the live run; golden journal, event log and book compared byte for byte | `tests/replay/` |
 | Zero allocation (test 25) | No `operator new` call across W1 (three seeds) and a stress stream covering IOC, FOK, market, modify, self-trade, duplicate ids and a full pool of 8 | `tests/bench/test_zero_alloc.cpp` |
 | Harness validation (tests 26, 27) | Timer noise floor and measurement overhead | `bench/`, `tests/bench/` |
-| Sanitizers (test 24) | ASan and UBSan on every test build, locally and in CI | `CMakeLists.txt`, `.github/workflows/ci.yml` |
+| Sanitizers (test 24) | ASan and UBSan on every test build, locally and in CI. UBSan reports are fatal, and `ubsan_aborts` checks that a deliberate signed overflow does abort | `CMakeLists.txt`, `.github/workflows/ci.yml`, `tests/unit/test_ubsan_death.cpp` |
 
 **What mutation testing showed.** The conformance tests alone missed bugs that the differential tests caught. In the first mutation run, 5 of 19 mutants were killed only by the oracle comparison: strict crossing on the sell side, an equal-quantity modify losing priority, a modify not advancing the sequence number, a filled order left in the id map, and a failed rest leaking an empty level. Most of the replay mutants are killed only by the golden files. That is the reason those layers exist.
 
 **What this does not establish.**
 - The engine and the oracle were written from the same spec by the same author. Differential testing catches implementation slips, not a misreading both share. That is why the open spec points were recorded as ADR-009 instead of being left implicit.
 - The mutants are a hand-picked list, not a systematic operator set. All killed means these faults are caught, not that no fault survives.
+- A few mutants are equivalent in output, so only a test that reads memory past the point the code should have stopped can kill them. The FOK early-exit mutants are the example: the answer is the same with or without the early exit, so `test15b` corrupts a level that is reachable only by walking past the boundary and relies on ASan to catch the read.
 - Fuzzing and exhaustive search cover the spec as written. They say nothing about behaviour a real venue has and this spec omits (auctions, other STP policies, multiple instruments).
 
 ## 9. Determinism and replay
@@ -360,12 +394,13 @@ flowchart TB
 ```
 
 - Replay builds a book from the header's capacity, applies records in order and stops at the first bad one, so a torn or corrupted journal replays exactly to its valid prefix.
+- Replay is bounded (`ReplayLimits`, [ADR-010](docs/adr/ADR-010-journal-format.md)). A journal over any of four bounds (pool capacity 2^20, journal size 4 GiB, 200,000,000 commands, event log 4 GiB by default) ends with a `Limit` and is never clamped: a smaller book would replay to a different state. A limit that is hit part way leaves a prefix of the unlimited run, byte for byte, and a command's log lines are appended whole or not at all. `journal::load` with a bound refuses a larger file while reading it. If the log or its staging buffer cannot grow, replay can still throw `std::bad_alloc`, and a log line that cannot be formatted throws `std::runtime_error`.
 - **Test 22** replays twice and requires identical bytes, requires replay to equal the live run, and exercises every truncation point and every single-bit flip of a journal.
 - **Test 23** compares a checked-in golden journal, event log and final book (`tests/golden/`, a fixed seed and 400 commands) byte for byte. Any change in engine output breaks the build and has to be regenerated deliberately with `test_golden --update`, so a behaviour change cannot pass as a refactor. Separately, the journal unit test checks the writer against bytes produced by an independent Python encoder (`tools/journal_golden.py`), so the layout is what the ADR says and not merely what the writer and reader agree on.
 
 ### Known gaps in the journal
 
-No `fsync` (survives process death, not power loss). No detection of deleted or reordered records, since each record is checked alone. The reader holds the whole file in memory. Reopening a journal and appending after recovery is not built. The SIGKILL crash-recovery test is the next M4 item.
+No `fsync` (survives process death, not power loss). No detection of deleted or reordered records, since each record is checked alone. Replay holds the whole journal in memory, up to the size limit. Reopening a journal and appending after recovery is not built. The SIGKILL crash-recovery test is the next M4 item.
 
 ## 10. Performance
 
@@ -448,6 +483,44 @@ How much to trust it:
 
 **Cause of the p99.9 increase: not established.** Hypothesis, untested: the benchmark book has a pool of 65,536 orders, so the O2 id table is 131,072 entries of 16 bytes, 2 MiB, hit at effectively random addresses on every command, while only about 3,000 orders are live. The `std::unordered_map` it replaced kept those few thousand nodes close together. If that is right, a smaller table, or a hash that keeps nearby ids nearby, would bring the tail back. Other candidates (probe-run length under backward-shift erase, TLB misses) are equally unmeasured. This is the next item.
 
+### Cost of the hardening series
+
+Measured on the same machine as the rest of this section, on core 3 with governor `performance` and turbo off. `power-profiles-daemon` and `auto-cpufreq` were stopped for the run, no other process above 5% CPU was on the core or its hyperthread sibling, and every results file records the governor, the turbo state and the pinned core. Kernel 7.0.0-43, GCC 15.2.0. The flags are `-march=native -fno-plt` on top of Release's `-O3 -DNDEBUG`, with no duplicate `-O3`, so **these numbers are not comparable with the tables above** (the methodology document explains the flag change). Both columns were built and run in this one session.
+
+"Before" is 55617ba, the commit the series started from. "After" is 33bb4b6, Commits 01 to 17. W1 seed 1, 1,000,000 measured operations, three runs per version, interleaved (before, after, before, after, ...). Cells are the mean of three, with the range in brackets.
+
+| W1 | Before (55617ba) | After (33bb4b6) | Change |
+| --- | ---: | ---: | ---: |
+| Throughput, ops/s | 5,468,602 (5,458,554 to 5,482,718) | 5,469,965 (5,463,704 to 5,473,326) | +0.02% |
+| Limit p50, ns | 131.6 (131.0 to 131.9) | 135.0 (134.3 to 136.0) | **+2.6%** |
+| Limit p99, ns | 429.2 (427.8 to 431.1) | 433.1 (432.4 to 434.0) | +0.9% |
+| Limit p99.9, ns | 2,608.7 (2,557.9 to 2,651.3) | 2,485.0 (2,440.5 to 2,553.8) | -4.7% |
+| Cancel p50, ns | 302.6 (301.3 to 303.4) | 300.8 (300.1 to 301.3) | -0.6% |
+| Cancel p99, ns | 570.3 (568.4 to 572.1) | 569.1 (568.0 to 569.6) | -0.2% |
+| Cancel p99.9, ns | 2,573.3 (2,462.8 to 2,631.0) | 2,463.6 (2,412.8 to 2,530.2) | -4.3% |
+
+- **Throughput did not change detectably.** The difference between the means, 0.02%, is smaller than the spread between runs of the same version (0.44% before, 0.18% after).
+- **The limit-order median is slower by about 3.4 ns, roughly 8 cycles at 2.4 GHz.** That is outside the 1.5% p50 spread documented for this setup, and the three runs of each version do not overlap, so it is treated as real. Limit p99 (+0.9%) and both cancel figures are inside the 1.5% spread.
+- **The p99.9 figures are lower by 4 to 5%.** The documented spread at p99.9 is about 8%, so no improvement is claimed.
+- **Cause not isolated.** W1 sends no FOK and no invalid commands, so what a limit order gained is the side and time-in-force check before the sequence number, the capacity check on an id insert, the level insert returning a pointer, and `noexcept`. The series was measured as a whole, not commit by commit.
+
+W2 (fill-or-kill, [methodology](docs/benchmark-methodology.md)), 200,000 rounds per scenario, three runs per version. "Before" is the "after" tree with `book.hpp` taken from the commit before the early exit, so the two differ only by that change.
+
+| W2 | Before | After | Change |
+| --- | ---: | ---: | ---: |
+| Deep (4,000 orders in reach) p50, ns | 8,897 (8,895 to 8,899) | 86 (81 to 94) | about 100x lower |
+| Deep p99, ns | 10,844 (10,793 to 10,896) | 126 (120 to 131) | about 85x lower |
+| Deep p99.9, ns | 13,082 (12,735 to 13,337) | 197 (182 to 213) | about 65x lower |
+| Shallow (4 orders in reach) p50, ns | 83.5 (81.8 to 85.2) | 85.9 (82.3 to 93.0) | no change established |
+| Shallow p99, ns | 170 (167 to 174) | 147 (108 to 167) | no change established (one low run) |
+
+- Before the early exit the deep FOK cost about 2.2 ns for each of the 4,000 orders it walked. After it, the deep and shallow medians are the same, 86 ns.
+- **This is the best case for the early exit.** In W2 the first order in reach covers the whole FOK, so the walk stops at once. A FOK that needs most of the book still walks most of it.
+- The "after" deep medians rose across the three runs (81, 84, 94 ns), so quote them to about 10%, not to the nanosecond.
+- In all six noise files the noise-floor p99 spread was 0.0 ns. All overhead files report `one_percent_rule: exceeded`, as the earlier ones do: the 21 ns timer cost is more than 1% of a 130 ns operation, which is why latency is compared between versions and not read as absolute.
+
+Result files: `bench/results/ubuntu-i5-1135G7-hardening-{base,head}-r{1,2,3}-{noise,overhead,w1}.csv` and `ubuntu-i5-1135G7-hardening-fok-{before,after}-r{1,2,3}-w2.csv`.
+
 ### The price-level container
 
 Before the pinned run, an unpinned A/B in a shared sandbox suggested the sorted array was much slower than `std::map` (cancel p99 about ten times worse). **The pinned run on the benchmark machine did not reproduce that.** Cancel p99 went from 746.9 ns (O2, `std::map` levels) to 572.9 ns (O3). The shared sandbox result was an artifact of the environment and has been withdrawn.
@@ -467,8 +540,12 @@ The page table (index levels by price offset, no shifting) is therefore deferred
 
 - **The p99.9 regression that arrived with O2.** About 4x worse than O1 on W1, cause unknown (hypothesis in section 10).
 - **Repeat runs.** The latency table is one run per version in one session. A second session, with all power managers stopped, would tighten it.
-- **Other workloads.** Only W1 (limit orders and cancels, one account per order). No modify, IOC, FOK, market or self-trade traffic is benchmarked, and no shallow or very deep books.
+- **Other workloads.** W1 (limit orders and cancels, one account per order) and W2 (fill-or-kill on shallow and deep books) have pinned-core results. No modify, IOC, market or self-trade traffic is benchmarked, so the cost of the hardening series on those paths is unknown. `modify_order` gained a capacity check in the series.
+- **Cause of the 2.6% limit-order p50 increase.** The series was measured as a whole against 55617ba, not commit by commit, so the cause is not isolated (section 10).
+- **The FOK early exit is measured at its best case only.** In W2 the first order in reach covers the order, so the walk stops at once. A FOK that needs most of the book has not been measured.
 - **Crash recovery.** The SIGKILL-at-random-offsets test, `fsync`, record-chain integrity and resume-append are not built.
+- **Unreachable guards.** `Book::rest` refuses when the id map or level array is full, and `modify_order` ends the process if a level cannot be created. Both arrays are sized so this cannot happen through `Book`, so those branches have no test; the containers' refusals are tested on their own.
+- **By-value overloads.** They still allocate and are not `noexcept`, so the fail-stop contract covers the caller-owned `AddResult` forms only.
 - **Concurrency.** The SPSC ring pipeline is planned and deliberately last.
 - **Cache-line layout, branch reduction, prefetching, ingress batching.** Not started. Failed attempts will be documented in the same table as successful ones.
 - **Page-table price levels.** Deferred, see section 10.
@@ -476,7 +553,7 @@ The page table (index levels by price offset, no shifting) is therefore deferred
 
 ## 12. Engineering log: what went wrong
 
-Real defects and wrong decisions, kept because each one changed the process.
+Real bugs and wrong decisions, kept because each one changed the process.
 
 | What happened | How it was found | What changed |
 | --- | --- | --- |
@@ -489,6 +566,15 @@ Real defects and wrong decisions, kept because each one changed the process.
 | I concluded from an unpinned, shared-sandbox A/B that sorted-array levels were about 10x worse on cancel tails, and the repo's ADR-003 and a commit message recorded that as a regression | The pinned-core run on the benchmark machine: cancel p99 improved 23% over O2 | The conclusion was withdrawn and the README rewritten from the pinned data. Lesson: a shared-VM A/B can mislead in either direction, so no latency claim is made without a pinned run |
 | The re-run of the baseline commit came out 15% slower than the committed baseline with a 20 us p99.9 | Same-session control run | Marked as disturbed and excluded. All comparisons are within one session, never against the baseline-day numbers |
 | p99.9 became about 4x worse at O2 while throughput improved | The pinned latency table | Open. Recorded in section 11 with an untested hypothesis |
+| The FOK pre-check summed resting quantities in 32 bits, so two resting orders of 2^31 lots wrapped to zero and a fillable order was rejected | Run against the old engine, the boundary-biased quantity profile in the fuzzer diverged from the oracle at seed 1 (engine 0 trades, oracle 1); tests 14c and 14d isolate the wrap | 64-bit sum. The fuzzer gained a quantity profile biased to the boundaries (powers of two, `UINT32_MAX`), and a mutant that narrows the sum back |
+| A command with an unknown kind was written as a 13-byte record under a good checksum. The reader stopped there, so every command accepted after it was lost on replay | On the old writer, a command with kind 9 placed after the first record of a four-command journal was appended successfully, and replay stopped with `BadKind` after one command, losing the three valid commands after it | `Writer::append` returns `Invalid` and writes nothing. ADR-011 defines which commands are valid |
+| An out-of-range side rested as a sell and took a sequence number, and a time in force above 2 behaved as IOC | Tests 18b and 18c fail on the old code. A probe showed side 2 resting on the ask side with a sequence number taken, and a time in force of 3 acting as IOC | Refused before the sequence number is taken, in the book, the writer and replay |
+| An allocation failure inside a command would have left it half applied: trades already made, the rest not | Failing the allocation of the trades vector let `std::bad_alloc` escape `add_limit_order`, and the next trade id was 1 instead of 0 | `noexcept` entry points, trades reserved at startup, ADR-012 |
+| Replay built a `Book` of whatever capacity the journal header named, and the log grew with the file | Feeding `replay::replay` a header with a valid CRC and capacity `UINT32_MAX` requested a 192 GiB allocation (`std::bad_alloc`, or an ASan out-of-memory abort) | `ReplayLimits`, refused before anything is built, with `load` bounded while reading |
+| After exactly 2^32 frees of one slot its generation wrapped and a stale handle validated again | A probe on the old pool, then pool tests with a small maximum generation | Slots retire at the maximum generation |
+| The event-log line writer read past its 256-byte buffer when a field made a line longer | A test with a 400-character field, which ASan reported as a stack-buffer-overflow read | The line is formatted again at its full length, and an unencodable format throws |
+| Three invariant checks could be removed from `Book` and all 20 tests still passed | Deleting them to see | The checks moved to `invariants.hpp`, and each reachable message has a test that corrupts the structure and compares the text |
+| The id map and level arrays enforced their capacity only with `assert`. In a release build the id map accepted entries until its table was full and then looped forever on the next insert, and the level array wrote past its end | Compiled with `NDEBUG` and driven past capacity: the id map hung on the insert after the table filled, and ASan reported a heap-buffer-overflow write in the level array | Both refuse in release builds. Unreachable through `Book`, tested on the containers (section 11) |
 
 ## 13. Reproducing everything
 
@@ -504,13 +590,20 @@ cmake --build build-rel --parallel --target fuzz_diff exhaustive_diff
 ./build-rel/fuzz_diff 100 1000000 1 32
 ./build-rel/exhaustive_diff
 
-# Mutation check (slow, about a minute per mutant)
+# Boundary-biased quantity profile, as in the ctest differential_fuzz_boundary
+./build-rel/fuzz_diff 10 20000 1 8 boundary
+
+# Mutation check (slow: about 45 seconds per mutant, about two hours for all 163)
 bash tools/mutation_check.sh
 
 # Allocation counts (any machine)
 cmake -S . -B build-allocs -DCMAKE_BUILD_TYPE=Release -DENABLE_SANITIZERS=OFF
 cmake --build build-allocs --target bench_allocs
 ./build-allocs/bench_allocs <label> 1 1000000
+
+# FOK workload W2 (shallow and deep books; quote it only from a pinned core)
+cmake --build build-allocs --target bench_fok
+./build-allocs/bench_fok <label> 200000 <cpu> > bench/results/<name>.csv
 
 # Latency baseline (Linux, pinned core, governor and turbo set; read the methodology first)
 tools/run_baseline.sh <cpu> <label>
@@ -526,21 +619,21 @@ python3 tools/make_charts.py
 
 ```
 include/engine/     header-only engine: book, pool, id_map, price_levels, level,
-                    journal, command, replay, types
+                    invariants, journal, command, replay, types
 tests/conformance/  hand-written spec tests
 tests/oracle/       oracle self-checks
 tests/fuzz/         differential fuzz and exhaustive search
-tests/unit/         id map, price levels, journal
+tests/unit/         id map, price levels, pool, invariants, journal, fail-stop, UBSan death test
 tests/replay/       determinism tests (22, 23)
 tests/golden/       checked-in golden journal, event log and book
 tests/bench/        tests for the benchmark harness, zero-allocation test (25)
-tests/support/      oracle and differential-test helpers (kept out of include/)
+tests/support/      oracle, differential-test helpers and the reference journal loop (kept out of include/)
 bench/              workload generator, timing, runners, allocation counter, results/
 tools/              mutation check, baseline runner, journal golden-bytes encoder, chart generator
-docs/               spec, benchmark methodology, ADR-001 to ADR-010, img/ (generated charts)
+docs/               spec, benchmark methodology, ADR-001 to ADR-012, img/ (generated charts)
 ```
 
-Documentation: [`docs/spec.md`](docs/spec.md) (S1 to S8), [`docs/adr/`](docs/adr) (ADR-001 to ADR-010), [`docs/benchmark-methodology.md`](docs/benchmark-methodology.md).
+Documentation: [`docs/spec.md`](docs/spec.md) (S1 to S8), [`docs/adr/`](docs/adr) (ADR-001 to ADR-012), [`docs/benchmark-methodology.md`](docs/benchmark-methodology.md).
 
 
 ## License

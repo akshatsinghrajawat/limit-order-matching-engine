@@ -14,7 +14,7 @@ is described here.
 
 CPU model, core pinned (`taskset` / `sched_setaffinity`), governor set
 to `performance`, turbo state, RAM, kernel version, compiler + flags
-(`-O3 -march=native -fno-plt`), binary hash.
+(`-march=native -fno-plt` on top of the Release defaults), binary hash.
 
 `bench/env.hpp` writes the block as `# key: value` lines at the top of a
 results file: `cpu_model`, `pinned_cpu`, `governor`, `turbo`, `ram`,
@@ -100,12 +100,23 @@ aren't published.
 ## Producing a baseline
 
 `tools/run_baseline.sh <cpu> <label>` does the whole sequence on one core:
-a Release build with sanitizers off and `-O3 -march=native -fno-plt`, then
+a Release build with sanitizers off and `-march=native -fno-plt` added to the Release defaults (`-O3 -DNDEBUG`), then
 `bench_noise`, `bench_overhead` and `bench_w1`, in that order. If the noise
 floor fails it stops, since nothing measured on that setup can be trusted.
 It writes `<label>-noise.csv`, `<label>-overhead.csv` and `<label>-w1.csv`
 to `bench/results/`, only if all three steps worked, and never over an
 existing file.
+
+Until the 2026-11 hardening series the script also passed `-O3` in
+`CMAKE_CXX_FLAGS`, which put a second `-O3` ahead of `-march=native` on the
+compile line. That is not a no-op: with the same sources, the `.text` of
+`bench_w1` differs between the two command lines (compared in one build
+directory with GCC 13). Every result file committed before this change was
+built with the duplicate, and the files are not edited. The
+`*-hardening-*` files (2026-11-15) are the first built without it. A comparison
+between one of them and a run from the current script mixes two flag
+orders, so repeat both sides with the same version of the script. The
+comparisons in the README are all within one session and are not affected.
 
 It refuses to start unless that core's governor is `performance`, and it
 refuses to keep the results unless the files themselves record governor
@@ -179,6 +190,10 @@ by-value forms allocate for their trades, ADR-008).
   `bench/workload_fok.hpp`, pinned by `tests/bench/test_workload_fok.cpp`,
   run with `bench_fok <label> [rounds] [cpu]`. It times the FOK alone, per
   operation, and reports no throughput. W1 is unchanged and sends no FOK.
+  The first pinned-core results are the `*-hardening-fok-*-w2.csv` files
+  in `bench/results/`: three runs of the tree before and the tree after the
+  early exit, interleaved with W1 runs of the commit before the hardening
+  series and the one after it, in one session.
 - Later workloads add: heavier cancel ratios (40%), bursty Poisson-arrival
   batches, deeper books. Each gets its own version number; no workload is
   silently modified in place.

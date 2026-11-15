@@ -1,0 +1,18 @@
+# cpu_model: 11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz
+# pinned_cpu: 3
+# governor: performance
+# turbo: disabled
+# ram: 15753 MiB
+# kernel: Linux 7.0.0-43-generic
+# compiler: GNU 15.2.0
+# flags: -march=native -fno-plt -O3 -DNDEBUG -Wall -Wextra -Wpedantic
+# tsc: invariant, 2.4192 GHz
+# binary_hash: 0869d5f3f2f6616e
+# methodology_version: 1
+# label: ubuntu-i5-1135G7-hardening-fok-before-r2
+# workload: W2
+# rounds: 200000 per scenario, the first tenth are warmup
+# latency_timing: per-op rdtscp+lfence around the FOK only, timer overhead not subtracted
+scenario,orders_in_reach,fok_samples,p50_ns,p99_ns,p999_ns,max_ns
+shallow,4,180000,81.8,167.0,329.4,13271.8
+deep,4000,180000,8898.4,10895.8,13336.7,173471.9

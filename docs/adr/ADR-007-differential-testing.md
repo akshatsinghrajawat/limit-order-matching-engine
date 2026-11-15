@@ -51,3 +51,39 @@ are Debug because `test_basic.cpp` uses `assert()`.
 ## Status
 
 Accepted at M2.
+
+## Addendum: the mutant list after the hardening series
+
+The list this ADR describes had 19 mutants in `book.hpp`. It was 84 across
+`book.hpp`, `id_map.hpp`, `price_levels.hpp`, `journal.hpp` and `replay.hpp`
+before the hardening series, and is 163 across nine headers now:
+
+| header             | mutants |
+| ------------------ | ------: |
+| `book.hpp`         |      37 |
+| `id_map.hpp`       |      13 |
+| `pool.hpp`         |       5 |
+| `invariants.hpp`   |      14 |
+| `price_levels.hpp` |      14 |
+| `journal.hpp`      |      28 |
+| `types.hpp`        |       4 |
+| `command.hpp`      |       8 |
+| `replay.hpp`       |      40 |
+
+What changed in how the check works:
+
+- A mutant is a literal replacement of the Nth occurrence of a string in one
+  header. A pattern that no longer occurs, because an edit near it changed
+  the text, is reported as `PATTERN NOT FOUND` and the check exits 2, so a
+  mutant cannot be lost silently. After editing a header, run the check
+  with the test run stubbed out to see that every pattern still resolves.
+- `test_basic.cpp` uses `CHECK` and no longer depends on `assert()`. The
+  builds are still Debug, so that the `assert()` calls in the engine
+  headers are enabled.
+- Some mutants cannot change any output. Removing the FOK pre-check's early
+  exit returns the same total, only after walking further. Those are killed
+  by a test that places corrupt memory where only the longer walk reads it,
+  and relies on ASan. A mutant that survives is either a gap in the tests or
+  one of these, and has to be looked at either way.
+- A full run takes about 45 seconds per mutant on the machine it was timed
+  on, about two hours for 163, so the CI job's limit is 240 minutes.

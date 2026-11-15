@@ -36,11 +36,10 @@ inline bool valid(TimeInForce t) {
 // regardless of access frequency — ADR-002 listed it as a cold field
 // before this was implemented; that was a spec error, corrected here.
 //
-// `level_idx` is also deliberately absent. The book's price-level
-// container (ADR-003) isn't built yet, and its final shape (map vs. flat
-// array vs. page table) determines how an order should reference its
-// level — adding that field now would be a guess this struct would have
-// to unlearn later.
+// `level_idx` is also deliberately absent. The price levels are a sorted
+// array (ADR-003) and an insert or erase away from the touch shifts every
+// level behind it, so a stored index would go stale; an order's level is
+// found from its side and price instead.
 struct Order {
   // hot — read/written on every crossing-loop iteration
   Price price = 0;
@@ -49,7 +48,7 @@ struct Order {
   Index prev_idx = kNilIndex;
   Side side = Side::Buy;
 
-  // cold — read only on cancel, modify lookup, or audit
+  // cold — read only on cancel, modify lookup, or invariant checks
   OrderId order_id = 0;
   std::uint32_t account = 0;  // STP compares this, not order_id — S3
   SeqNo seq_no = 0;

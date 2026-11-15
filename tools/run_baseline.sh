@@ -74,7 +74,7 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
 cmake -S "$root" -B "$build" -DCMAKE_BUILD_TYPE=Release -DENABLE_SANITIZERS=OFF \
-  -DCMAKE_CXX_FLAGS="-O3 -march=native -fno-plt" > "$work/configure.log" 2>&1 || {
+  -DCMAKE_CXX_FLAGS="-march=native -fno-plt" > "$work/configure.log" 2>&1 || {
   cat "$work/configure.log"
   exit 2
 }

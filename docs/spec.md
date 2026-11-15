@@ -86,7 +86,8 @@ order's price** (never the taker's).
   guaranteed twice over: explicitly, by rejecting before any book mutation;
   and structurally, by S8 — no other command can be interleaved between the
   pre-check and the fill attempt, so nothing could have touched the book in
-  between even if the check had allowed it.
+  between even if the check had allowed it, and the entry points do not
+  throw, so the fill cannot stop part way (Failure and recovery, below).
 - If a limit order's residual cannot rest because the pool is full, only
   the residual is dropped and flagged; the trades it already made stand
   (ADR-009).
@@ -130,7 +131,8 @@ Each dequeued command executes to completion — including every match, fill,
 and event emission it triggers — before the next command is dequeued.
 There is no interleaving point inside the core. This is atomic **by
 construction** (the core is single-threaded, one command at a time), not by
-any lock or check.
+any lock or check. A command also cannot stop part way: the entry points
+do not throw (Failure and recovery, below).
 
 Any future change to the dequeue loop (e.g. O8, ingress batching or command
 coalescing) must explicitly preserve this property, and its ADR must state
