@@ -127,3 +127,39 @@ damaged bytes, never something the writer produced.
 `Unusable`; it cannot show `IoError`. The test for that lowers the file size
 limit to leave room for the header and part of one record, so `open` works
 and the first record fails. It is skipped where `setrlimit` is missing.
+
+## Addendum: bounds on a replay
+
+The header's pool capacity decides how large a book replay builds, and the
+rest of the file decides how long the log grows, so a damaged or hostile
+journal could previously exhaust memory before replay reported anything.
+`ReplayLimits` now bounds four things, each with a default far above any
+journal the engine writes:
+
+| field                 | default       | refused or stopped when                       | `Limit`         |
+| --------------------- | ------------- | --------------------------------------------- | --------------- |
+| `max_pool_capacity`   | 2^20          | the header asks for more slots                | `PoolCapacity`  |
+| `max_journal_bytes`   | 4 GiB         | the journal is longer                         | `JournalBytes`  |
+| `max_commands`        | 200,000,000   | another command follows the last one allowed  | `Commands`      |
+| `max_event_log_bytes` | 4 GiB         | the next command's lines do not fit in the log | `EventLogBytes` |
+
+The journal size and the pool capacity are checked after the header is read
+and before anything is allocated, so a header that cannot be read is still
+reported through `stop` and never as a limit. The other two end the replay
+part way through: `stop` stays `Ok`, `limit` names the bound, and the result
+is a prefix of the unlimited run, byte for byte.
+
+- `Commands` stops before the command that would exceed the bound.
+  `valid_bytes` is the end of the last command replayed.
+- `EventLogBytes` stops after applying the command whose lines do not fit,
+  because the size of those lines is only known once the command has run.
+  `commands`, `valid_bytes` and `book` include it; `log` and `logged` do not.
+  Each command's lines are built in a separate buffer and appended whole, so
+  the log never ends inside a command.
+- A damaged tail that is reached before a bound is still reported through
+  `stop`, and `limit` stays `None`.
+
+`journal::load(path, out, max_bytes)` applies the size bound while reading,
+in 4096-byte chunks, so a file over the bound is refused (`TooLarge`) without
+being held in memory. The vector's capacity stays under twice the bound. The
+two-argument `load` is the same read with no bound.

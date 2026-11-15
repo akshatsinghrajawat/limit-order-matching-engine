@@ -477,6 +477,19 @@ check journal-append-io-error-reported-as-ok 1 \
   '? AppendStatus::Ok : AppendStatus::IoError;' \
   '? AppendStatus::Ok : AppendStatus::Ok;'
 
+check load-bound-off-by-one 1 \
+  'if (n > max_bytes - out.size()) {' \
+  'if (n >= max_bytes - out.size()) {'
+check load-bound-ignored 1 \
+  'if (n > max_bytes - out.size()) {' \
+  'if (false) {'
+check load-too-large-reported-as-unreadable 1 \
+  'status = LoadStatus::TooLarge;' \
+  'status = LoadStatus::Unreadable;'
+check load-unbounded-form-bounded 1 \
+  'load(path, out, SIZE_MAX)' \
+  'load(path, out, 1024)'
+
 use_target include/engine/types.hpp
 check types-sell-not-a-side 1 \
   'return s == Side::Buy || s == Side::Sell;' \
@@ -576,13 +589,13 @@ check replay-line-ignores-format-error 1 \
   'if (n < 0) throw std::runtime_error("replay: output formatting failed");' \
   ';'
 check replay-position-off-by-one 1 \
-  'append_events(out.log, out.commands, c, o, scratch.trades);' \
-  'append_events(out.log, out.commands + 1, c, o, scratch.trades);'
+  'append_events(staged, out.commands - 1, c, o, scratch.trades);' \
+  'append_events(staged, out.commands, c, o, scratch.trades);'
 check replay-commands-not-counted 1 \
   '++out.commands;' \
   ';'
 check replay-valid-bytes-not-set 1 \
-  'out.valid_bytes = reader.valid_bytes();' \
+  'out.valid_bytes = out.limit == Limit::None ? reader.valid_bytes() : good;' \
   ';'
 check replay-book-not-serialized 1 \
   'out.book = serialize_book(*book);' \
@@ -604,6 +617,42 @@ check replay-invalid-command-applied 1 \
   'if (false) {'
 check replay-invalid-command-keeps-trades 1 \
   'scratch.reset();' \
+  ';'
+check replay-journal-limit-off-by-one 1 \
+  'size > limits.max_journal_bytes' \
+  'size >= limits.max_journal_bytes'
+check replay-journal-limit-ignored 1 \
+  'if (size > limits.max_journal_bytes) {' \
+  'if (false) {'
+check replay-journal-limit-not-reported 1 \
+  'out.limit = Limit::JournalBytes;' \
+  'out.limit = Limit::None;'
+check replay-command-limit-off-by-one 1 \
+  'out.commands >= limits.max_commands' \
+  'out.commands > limits.max_commands'
+check replay-command-limit-ignored 1 \
+  'if (out.commands >= limits.max_commands) {' \
+  'if (false) {'
+check replay-command-limit-not-reported 1 \
+  'out.limit = Limit::Commands;' \
+  'out.limit = Limit::None;'
+check replay-command-limit-valid-bytes 1 \
+  'out.limit == Limit::None ? reader.valid_bytes() : good' \
+  'reader.valid_bytes()'
+check replay-log-limit-off-by-one 1 \
+  'staged.size() > limits.max_event_log_bytes - out.log.size()' \
+  'staged.size() >= limits.max_event_log_bytes - out.log.size()'
+check replay-log-limit-ignored 1 \
+  'if (staged.size() > limits.max_event_log_bytes - out.log.size()) {' \
+  'if (false) {'
+check replay-log-limit-not-reported 1 \
+  'out.limit = Limit::EventLogBytes;' \
+  'out.limit = Limit::None;'
+check replay-log-limit-ignores-earlier-lines 1 \
+  'limits.max_event_log_bytes - out.log.size()' \
+  'limits.max_event_log_bytes'
+check replay-logged-not-counted 1 \
+  '++out.logged;' \
   ';'
 
 echo

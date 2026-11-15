@@ -245,6 +245,99 @@ static void an_unreadable_header_is_not_a_limit() {
   CHECK(r.stop == Status::Ok && r.limit == replay::Limit::PoolCapacity);
 }
 
+// What the three bounds on a replay do. Every stop is a prefix of the
+// unlimited run: the same bytes of log, the same book, the same place in the
+// journal.
+static void the_journal_size_limit_is_checked_before_anything_is_built() {
+  const auto cmds = stream::make(7, 200);
+  const auto bytes = stream::journal_bytes(kCapacity, cmds);
+  replay::ReplayLimits limits;
+
+  limits.max_journal_bytes = bytes.size();
+  replay::Replayed r;
+  CHECK(replay::replay(bytes.data(), bytes.size(), r, limits));
+  CHECK(r.limit == replay::Limit::None && r.commands == cmds.size());
+
+  limits.max_journal_bytes = bytes.size() - 1;
+  CHECK(!replay::replay(bytes.data(), bytes.size(), r, limits));
+  CHECK(r.limit == replay::Limit::JournalBytes && r.stop == Status::Ok);
+  CHECK(r.commands == 0 && r.valid_bytes == 0 && r.log.empty() && r.book.empty());
+
+  // A header that cannot be read is still the journal's fault.
+  std::vector<std::uint8_t> bad = bytes;
+  bad[0] ^= 0xFF;
+  limits.max_journal_bytes = 0;
+  CHECK(!replay::replay(bad.data(), bad.size(), r, limits));
+  CHECK(r.stop == Status::BadField && r.limit == replay::Limit::None);
+}
+
+static void the_command_limit_stops_before_the_command_over_it() {
+  const auto cmds = stream::make(8, 300);
+  const auto bytes = stream::journal_bytes(kCapacity, cmds);
+  const Live live = run_live(cmds);
+  const auto ends = record_ends(cmds);
+
+  for (std::size_t k = 0; k <= cmds.size() + 1; ++k) {
+    replay::ReplayLimits limits;
+    limits.max_commands = k;
+    replay::Replayed r;
+    CHECK(replay::replay(bytes.data(), bytes.size(), r, limits));
+    if (k < cmds.size()) {
+      CHECK(r.limit == replay::Limit::Commands && r.stop == Status::Ok);
+      CHECK(r.valid_bytes == ends[k]);
+      CHECK(r.logged == k);
+      check_prefix(r, live, k);
+    } else {
+      CHECK(r.limit == replay::Limit::None && r.stop == Status::End);
+      CHECK(r.valid_bytes == bytes.size() && r.logged == cmds.size());
+      check_prefix(r, live, cmds.size());
+    }
+  }
+}
+
+static void the_log_limit_never_cuts_a_command_in_half() {
+  const auto cmds = stream::make(9, 300);
+  const auto bytes = stream::journal_bytes(kCapacity, cmds);
+  const Live live = run_live(cmds);
+  const auto ends = record_ends(cmds);
+
+  for (std::size_t k = 0; k <= cmds.size(); ++k) {
+    for (const std::size_t shortfall : {std::size_t{0}, std::size_t{1}}) {
+      if (shortfall > live.log_size[k]) continue;
+      replay::ReplayLimits limits;
+      limits.max_event_log_bytes = live.log_size[k] - shortfall;
+      replay::Replayed r;
+      CHECK(replay::replay(bytes.data(), bytes.size(), r, limits));
+      // The limit equals the log of the first k commands, or is one byte
+      // under it, which only the first k - 1 fit.
+      const std::size_t fit = k - shortfall;
+      if (fit == cmds.size()) {
+        CHECK(r.limit == replay::Limit::None && r.stop == Status::End && r.logged == fit);
+        check_prefix(r, live, fit);
+        continue;
+      }
+      CHECK(r.limit == replay::Limit::EventLogBytes && r.stop == Status::Ok);
+      CHECK(r.logged == fit && r.commands == fit + 1);
+      CHECK(r.log == live.log.substr(0, live.log_size[fit]));
+      CHECK(r.valid_bytes == ends[fit + 1]);
+      CHECK(r.book == live.book_after[fit + 1]);
+    }
+  }
+}
+
+static void a_limit_does_not_hide_a_damaged_tail() {
+  const auto cmds = stream::make(10, 50);
+  auto bytes = stream::journal_bytes(kCapacity, cmds);
+  bytes.push_back(0xEE);  // not a command kind
+
+  replay::ReplayLimits limits;
+  limits.max_commands = cmds.size();
+  replay::Replayed r;
+  CHECK(replay::replay(bytes.data(), bytes.size(), r, limits));
+  CHECK(r.limit == replay::Limit::None && r.stop == Status::BadKind);
+  CHECK(r.commands == cmds.size() && r.valid_bytes == bytes.size() - 1);
+}
+
 // The line writer. The buffer is 256 bytes; a line that needs more is
 // formatted again at its full length, and one that cannot be formatted at all
 // throws. Before this, the full length was appended from a 256-byte buffer,
@@ -454,6 +547,10 @@ int main() {
   replay_uses_the_pool_capacity_in_the_header();
   a_capacity_over_the_limit_is_refused_not_clamped();
   an_unreadable_header_is_not_a_limit();
+  the_journal_size_limit_is_checked_before_anything_is_built();
+  the_command_limit_stops_before_the_command_over_it();
+  the_log_limit_never_cuts_a_command_in_half();
+  a_limit_does_not_hide_a_damaged_tail();
   the_longest_lines_the_log_writes_fit_the_buffer();
   a_line_that_does_not_fit_the_buffer_is_written_whole();
   a_format_that_cannot_be_encoded_throws();

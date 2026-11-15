@@ -174,30 +174,53 @@ enum class Limit : std::uint8_t {
   None,
   PoolCapacity,  // the header asks for more pool slots than ReplayLimits allows
   OutOfMemory,   // building the book or reserving the trade buffer failed
+  JournalBytes,  // the journal is longer than ReplayLimits allows
+  Commands,      // the journal holds more commands than ReplayLimits allows
+  EventLogBytes, // the next command's lines would take the log past ReplayLimits
 };
 
 // The header's pool capacity is read from the file, and a Book of that size
 // is allocated up front, so it is bounded before anything is built. A
 // capacity over the bound is refused, never clamped: a smaller book would
-// replay to a different state (ADR-009, point 3).
+// replay to a different state (ADR-009, point 3). The other three bound what
+// the replay holds: the journal, the commands applied and the log written.
+// The defaults are far above any journal the engine writes in a day; they
+// are there so a hostile or runaway file ends in a Limit, not in the
+// allocator.
 struct ReplayLimits {
   Index max_pool_capacity = 1u << 20;
+  std::uint64_t max_journal_bytes = 4ULL << 30;
+  std::uint64_t max_commands = 200'000'000ULL;
+  std::uint64_t max_event_log_bytes = 4ULL << 30;
 };
 
 struct Replayed {
   std::string log;
   std::string book;                   // the book after the last command that replayed
   std::size_t commands = 0;           // how many commands replayed
+  std::size_t logged = 0;             // how many of them have their lines in log
   journal::Status stop = journal::Status::End;  // why reading stopped
   std::size_t valid_bytes = 0;        // where the good part of the journal ends
   Limit limit = Limit::None;          // set when a limit, not the journal, ended the replay
 };
 
-// Replays every command up to the first bad record. Returns false when the
-// header cannot be read or a limit is hit before the book is built, in which
-// case nothing was replayed: out.stop says why for a bad header, out.limit
-// for a limit. A damaged tail is not a failure: out.stop reports it and
-// everything before it is replayed.
+// Replays every command up to the first bad record or the first limit.
+// Returns false when the header cannot be read or a limit is hit before the
+// book is built, in which case nothing was replayed: out.stop says why for a
+// bad header, out.limit for a limit. A damaged tail is not a failure:
+// out.stop reports it and everything before it is replayed.
+//
+// A limit reached while replaying is not a failure either. out.limit names
+// it, out.stop is Ok, and what was replayed is a prefix of what an unlimited
+// run produces, byte for byte. The command limit stops before the command
+// that would exceed it. The log limit stops after applying a command whose
+// lines do not fit: commands, valid_bytes and book include that command,
+// and logged and log do not, so logged is commands - 1.
+//
+// Throws std::bad_alloc if the log or the staging buffer cannot grow, and
+// std::runtime_error if a log line cannot be formatted. A journal with a
+// larger log than the bound is stopped before it grows that far, not caught
+// after.
 inline bool replay(const std::uint8_t* data, std::size_t size, Replayed& out,
                    const ReplayLimits& limits = ReplayLimits{}) {
   out = Replayed{};
@@ -205,6 +228,10 @@ inline bool replay(const std::uint8_t* data, std::size_t size, Replayed& out,
   out.stop = reader.open();
   if (out.stop != journal::Status::Ok) return false;
 
+  if (size > limits.max_journal_bytes) {
+    out.limit = Limit::JournalBytes;
+    return false;
+  }
   if (reader.pool_capacity() > limits.max_pool_capacity) {
     out.limit = Limit::PoolCapacity;
     return false;
@@ -219,13 +246,30 @@ inline bool replay(const std::uint8_t* data, std::size_t size, Replayed& out,
     out.limit = Limit::OutOfMemory;
     return false;
   }
+
+  // One command's lines are built apart from the log and appended whole, so
+  // the log never ends part way through a command.
+  std::string staged;
   Command c;
+  std::size_t good = reader.valid_bytes();
   while ((out.stop = reader.next(c)) == journal::Status::Ok) {
+    if (out.commands >= limits.max_commands) {
+      out.limit = Limit::Commands;
+      break;
+    }
     const Outcome o = apply(*book, c, scratch);
-    append_events(out.log, out.commands, c, o, scratch.trades);
     ++out.commands;
+    good = reader.valid_bytes();
+    staged.clear();
+    append_events(staged, out.commands - 1, c, o, scratch.trades);
+    if (staged.size() > limits.max_event_log_bytes - out.log.size()) {
+      out.limit = Limit::EventLogBytes;
+      break;
+    }
+    out.log.append(staged);
+    ++out.logged;
   }
-  out.valid_bytes = reader.valid_bytes();
+  out.valid_bytes = out.limit == Limit::None ? reader.valid_bytes() : good;
   out.book = serialize_book(*book);
   return true;
 }

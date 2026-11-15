@@ -323,6 +323,35 @@ static void writer_and_load_report_failure() {
   CHECK(!journal::load("no_such_directory/journal.bin", bytes));
 }
 
+// A file over the bound is refused while it is being read, so the bytes of
+// it that were read are never all held at once.
+static void load_stops_reading_at_the_bound() {
+  const char* path = "journal_load_bound_test.bin";
+  const std::size_t file_size = 1 << 20;
+  {
+    std::FILE* f = std::fopen(path, "wb");
+    CHECK(f != nullptr);
+    const std::vector<std::uint8_t> block(file_size, 0x5A);
+    CHECK(std::fwrite(block.data(), 1, block.size(), f) == block.size());
+    std::fclose(f);
+  }
+  std::vector<std::uint8_t> bytes;
+  CHECK(journal::load(path, bytes, file_size) == journal::LoadStatus::Ok && bytes.size() == file_size);
+  CHECK(journal::load(path, bytes, file_size + 1) == journal::LoadStatus::Ok);
+  CHECK(journal::load(path, bytes, file_size - 1) == journal::LoadStatus::TooLarge);
+  CHECK(bytes.empty());
+
+  const std::size_t bound = 8192;
+  std::vector<std::uint8_t> fresh;  // clear() keeps capacity, so the earlier reads would hide it
+  CHECK(journal::load(path, fresh, bound) == journal::LoadStatus::TooLarge);
+  CHECK(fresh.empty() && fresh.capacity() <= 2 * bound);
+
+  CHECK(journal::load(path, bytes, 0) == journal::LoadStatus::TooLarge);
+  CHECK(journal::load("no_such_directory/journal.bin", bytes, bound) == journal::LoadStatus::Unreadable);
+  CHECK(journal::load(path, bytes) && bytes.size() == file_size);  // the unbounded form is unchanged
+  std::remove(path);
+}
+
 // A write the operating system refuses has to be reported, from the header
 // or from a record. /dev/full accepts the open and fails every flush, which
 // fails the header, so open returns false and every append after it is
@@ -599,6 +628,7 @@ int main() {
   writer_produces_the_same_bytes();
   writer_flushes_every_record();
   writer_and_load_report_failure();
+  load_stops_reading_at_the_bound();
   writer_reports_a_full_disk();
   every_command_kind_is_valid_and_round_trips();
   invalid_kinds_are_not_encoded();

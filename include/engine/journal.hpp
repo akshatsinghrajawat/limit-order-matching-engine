@@ -259,17 +259,38 @@ class Writer {
   bool failed_ = false;
 };
 
-// Reads a whole file. False if it cannot be opened or read.
-inline bool load(const char* path, std::vector<std::uint8_t>& out) {
+enum class LoadStatus : std::uint8_t {
+  Ok,
+  Unreadable,  // the file cannot be opened or read
+  TooLarge,    // the file is longer than the bound; out holds none of it
+};
+
+// Reads a whole file of at most max_bytes. The file is read in chunks and
+// checked as it grows, so a file over the bound is never held in memory, and
+// the vector's capacity stays under twice the bound.
+inline LoadStatus load(const char* path, std::vector<std::uint8_t>& out, std::size_t max_bytes) {
   std::FILE* f = std::fopen(path, "rb");
-  if (f == nullptr) return false;
+  if (f == nullptr) return LoadStatus::Unreadable;
   out.clear();
   std::uint8_t buf[4096];
   std::size_t n;
-  while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) out.insert(out.end(), buf, buf + n);
-  const bool ok = std::ferror(f) == 0;
+  LoadStatus status = LoadStatus::Ok;
+  while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) {
+    if (n > max_bytes - out.size()) {
+      out.clear();
+      status = LoadStatus::TooLarge;
+      break;
+    }
+    out.insert(out.end(), buf, buf + n);
+  }
+  if (status == LoadStatus::Ok && std::ferror(f) != 0) status = LoadStatus::Unreadable;
   std::fclose(f);
-  return ok;
+  return status;
+}
+
+// Reads a whole file. False if it cannot be opened or read.
+inline bool load(const char* path, std::vector<std::uint8_t>& out) {
+  return load(path, out, SIZE_MAX) == LoadStatus::Ok;
 }
 
 }  // namespace engine::journal
