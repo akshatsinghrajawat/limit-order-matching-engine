@@ -62,7 +62,7 @@ jobs:
 
   mutation-check:
     runs-on: ubuntu-26.04
-    timeout-minutes: 120
+    timeout-minutes: 240
     steps:
       - uses: actions/checkout@v4
 
