@@ -354,6 +354,68 @@ static void test14d_fok_pre_check_self_trade_boundary_with_wide_quantities() {
   }
 }
 
+// The pre-check stops as soon as the order is covered. The results below
+// would be the same if it walked on, so the first case is built to show it
+// does not: the level behind the order that covers the quantity is corrupted
+// so that visiting it reads far outside the pool, which a walk past the
+// boundary would do and a stop at the boundary never does.
+static void test15b_fok_pre_check_stops_once_the_quantity_is_covered() {
+  {  // covered by the first order: nothing behind it is read
+    Book book(16);
+    book.add_limit_order(1, Side::Sell, 100, 5, kSellAcct);
+    book.add_limit_order(2, Side::Sell, 101, 5, kSellAcct);
+    Order& behind = const_cast<Order&>(book.order_at(book.head_at(Side::Sell, 101)));
+    behind.qty = 0;
+    behind.next_idx = 0x40000000u;
+    auto r = book.add_limit_order(3, Side::Buy, 101, 5, kBuyAcct, TimeInForce::FOK);
+    CHECK(r.accepted && r.trades.size() == 1);
+    CHECK(r.trades[0].maker_order_id == 1 && r.trades[0].qty == 5);
+    CHECK(book.has_ask() && book.best_ask() == 101);
+  }
+  {  // covered exactly by the last order in reach: filled
+    Book book(16);
+    book.add_limit_order(1, Side::Sell, 100, 5, kSellAcct);
+    book.add_limit_order(2, Side::Sell, 100, 5, kSellAcct);
+    auto r = book.add_limit_order(3, Side::Buy, 100, 10, kBuyAcct, TimeInForce::FOK);
+    CHECK(r.trades.size() == 2 && r.trades[0].qty == 5 && r.trades[1].qty == 5);
+    CHECK(!book.has_ask());
+    CHECK(book.invariant_violation() == nullptr);
+  }
+  {  // one lot short of the whole reach: rejected, nothing touched
+    Book book(16);
+    book.add_limit_order(1, Side::Sell, 100, 5, kSellAcct);
+    book.add_limit_order(2, Side::Sell, 100, 5, kSellAcct);
+    auto r = book.add_limit_order(3, Side::Buy, 100, 11, kBuyAcct, TimeInForce::FOK);
+    CHECK(r.accepted && r.trades.empty() && r.resting_qty == 0);
+    CHECK(book.snapshot().size() == 2);
+    CHECK(book.invariant_violation() == nullptr);
+  }
+  {  // covered part way through the third level, on the sell side of the order
+    Book book(16);
+    book.add_limit_order(1, Side::Buy, 100, 3, kBuyAcct);
+    book.add_limit_order(2, Side::Buy, 99, 3, kBuyAcct);
+    book.add_limit_order(3, Side::Buy, 98, 3, kBuyAcct);
+    book.add_limit_order(4, Side::Buy, 97, 3, kBuyAcct);
+    auto r = book.add_limit_order(5, Side::Sell, 98, 7, kSellAcct, TimeInForce::FOK);
+    CHECK(r.trades.size() == 3);
+    CHECK(r.trades[0].qty == 3 && r.trades[1].qty == 3 && r.trades[2].qty == 1);
+    CHECK(book.snapshot().size() == 2);
+    CHECK(book.order_at(book.head_at(Side::Buy, 98)).qty == 2);
+    CHECK(book.invariant_violation() == nullptr);
+  }
+  {  // wider than 32 bits: covered by the second of two orders of 2^31
+    static constexpr Qty kHalf = Qty{1} << 31;
+    Book book(16);
+    book.add_limit_order(1, Side::Sell, 100, kHalf, kSellAcct);
+    book.add_limit_order(2, Side::Sell, 100, kHalf, kSellAcct);
+    book.add_limit_order(3, Side::Sell, 100, 9, kSellAcct);
+    auto r = book.add_limit_order(4, Side::Buy, 100, std::numeric_limits<Qty>::max(), kBuyAcct, TimeInForce::FOK);
+    CHECK(r.trades.size() == 2 && r.trades[0].qty == kHalf && r.trades[1].qty == kHalf - 1);
+    CHECK(book.snapshot().size() == 2);
+    CHECK(book.invariant_violation() == nullptr);
+  }
+}
+
 static void test15_fok_success_fills_atomically() {
   Book book(16);
   book.add_limit_order(1, Side::Sell, 100, 5, kSellAcct);
@@ -718,6 +780,7 @@ int main() {
   test14c_fok_pre_check_sum_is_not_32_bit();
   test14d_fok_pre_check_self_trade_boundary_with_wide_quantities();
   test15_fok_success_fills_atomically();
+  test15b_fok_pre_check_stops_once_the_quantity_is_covered();
   test16_fok_failure_leaves_book_untouched();
   test17_self_trade_prevention();
   test18_invalid_input_rejected_at_ingress();
@@ -726,6 +789,6 @@ int main() {
   test19_pool_exhaustion_is_clean_rejection();
   test_snapshot_reports_priority_order();
   test_invariants_hold_and_detect_corruption();
-  std::printf("conformance tests 1-19 (+8b, 8c, 12b-12d, 14b-14d, 18b, 18c): all passed\n");
+  std::printf("conformance tests 1-19 (+8b, 8c, 12b-12d, 14b-14d, 15b, 18b, 18c): all passed\n");
   return 0;
 }

@@ -73,6 +73,10 @@ if(BUILD_TESTS)
   target_link_libraries(test_workload PRIVATE bench_support)
   add_test(NAME bench_workload_w1 COMMAND test_workload)
 
+  add_executable(test_workload_fok tests/bench/test_workload_fok.cpp)
+  target_link_libraries(test_workload_fok PRIVATE bench_support)
+  add_test(NAME bench_workload_w2 COMMAND test_workload_fok)
+
   add_executable(test_timing tests/bench/test_timing.cpp)
   target_link_libraries(test_timing PRIVATE bench_support)
   add_test(NAME bench_timing COMMAND test_timing)
@@ -155,6 +159,9 @@ if(BUILD_TESTS)
   # the build they need to produce numbers worth keeping.
   add_executable(bench_w1 bench/bench_w1.cpp)
   target_link_libraries(bench_w1 PRIVATE bench_support)
+
+  add_executable(bench_fok bench/bench_fok.cpp)
+  target_link_libraries(bench_fok PRIVATE bench_support)
 
   add_executable(bench_noise bench/bench_noise.cpp)
   target_link_libraries(bench_noise PRIVATE bench_support)

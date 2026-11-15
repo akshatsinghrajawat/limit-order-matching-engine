@@ -102,9 +102,9 @@ class Book {
 
     if (tif == TimeInForce::FOK) {
       std::uint64_t available = (side == Side::Buy)
-          ? available_before_self_trade(asks_, price, account,
+          ? available_before_self_trade(asks_, price, account, qty,
                 [](Price resting, Price taker) { return resting <= taker; })
-          : available_before_self_trade(bids_, price, account,
+          : available_before_self_trade(bids_, price, account, qty,
                 [](Price resting, Price taker) { return resting >= taker; });
       if (available < static_cast<std::uint64_t>(qty)) {
         result.accepted = true;  // valid, well-formed order -- rejected on
@@ -360,13 +360,16 @@ class Book {
   // book/price-bound runs out (return what was found) or an order whose
   // account matches `account` is reached (stop and return the running
   // total *without* counting that order, mirroring cross()'s "self-match
-  // stops the sweep, that order is never touched" rule). The sum is 64-bit:
-  // each Qty is 32-bit and a few of them already pass 2^32. Read-only: no
-  // trades, no mutation, nothing to unwind if the caller decides to
-  // reject.
+  // stops the sweep, that order is never touched" rule), or the running
+  // total reaches `needed`. The caller only compares the result with
+  // `needed`, so past that point the walk has nothing left to decide; what
+  // comes back then is a lower bound that is at least `needed`, not
+  // everything available. The sum is 64-bit: each Qty is 32-bit and a few of
+  // them already pass 2^32. Read-only: no trades, no mutation, nothing to
+  // unwind if the caller decides to reject.
   template <typename Levels, typename Crosses>
   std::uint64_t available_before_self_trade(const Levels& resting_side, Price limit_price,
-                                            std::uint32_t account, Crosses crosses) const {
+                                            std::uint32_t account, Qty needed, Crosses crosses) const {
     std::uint64_t total = 0;
     for (std::size_t rank = 0; rank < resting_side.size(); ++rank) {
       const Level& level = resting_side.by_rank(rank);
@@ -376,6 +379,7 @@ class Book {
         const Order& order = pool_.unchecked(idx);
         if (order.account == account) return total;  // S3 boundary
         total += order.qty;
+        if (total >= static_cast<std::uint64_t>(needed)) return total;
         idx = order.next_idx;
       }
     }

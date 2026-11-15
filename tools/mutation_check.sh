@@ -145,6 +145,12 @@ check fok-precheck-buy-strict 1 \
 check fok-precheck-off-by-one 1 \
   'if (available < static_cast<std::uint64_t>(qty))' \
   'if (available <= static_cast<std::uint64_t>(qty))'
+check fok-precheck-early-exit-late 1 \
+  'if (total >= static_cast<std::uint64_t>(needed)) return total;' \
+  'if (total > static_cast<std::uint64_t>(needed)) return total;'
+check fok-precheck-no-early-exit 1 \
+  'if (total >= static_cast<std::uint64_t>(needed)) return total;' \
+  ';'
 check fok-precheck-sum-narrowed 1 \
   'std::uint64_t total = 0;' \
   'Qty total = 0;'

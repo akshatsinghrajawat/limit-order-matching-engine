@@ -169,6 +169,16 @@ by-value forms allocate for their trades, ADR-008).
   and pinned by `tests/bench/test_workload.cpp`. Limit orders and cancels
   only: no modify, market, IOC or FOK. One account per order, so
   self-trade prevention never fires.
+- **W2 (fill-or-kill)**: both sides hold `levels` price levels of
+  `per_level` orders of 10 lots, one account per order. Each round sends a
+  fill-or-kill for 10 lots, priced to reach the far end of the opposite
+  side, then rests 10 lots at the price the fill took from. The FOK fills
+  exactly one order and the book is the same size after every round, so the
+  only thing that varies between a shallow book (4 orders in reach) and a
+  deep one (4,000) is how far the pre-check walks. Defined by
+  `bench/workload_fok.hpp`, pinned by `tests/bench/test_workload_fok.cpp`,
+  run with `bench_fok <label> [rounds] [cpu]`. It times the FOK alone, per
+  operation, and reports no throughput. W1 is unchanged and sends no FOK.
 - Later workloads add: heavier cancel ratios (40%), bursty Poisson-arrival
   batches, deeper books. Each gets its own version number; no workload is
   silently modified in place.
