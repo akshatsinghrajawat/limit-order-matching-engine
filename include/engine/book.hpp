@@ -263,6 +263,10 @@ class Book {
 
   bool has_bid() const { return !bids_.empty(); }
   bool has_ask() const { return !asks_.empty(); }
+
+  // Preconditions: best_bid() needs has_bid() and best_ask() needs has_ask().
+  // On an empty side they read outside the level array: a Debug build stops
+  // at the assert in PriceLevels::best(), a Release build does not check.
   Price best_bid() const { return bids_.best().price; }
   Price best_ask() const { return asks_.best().price; }
 
